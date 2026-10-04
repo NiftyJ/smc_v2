@@ -80,3 +80,4 @@ def test_a_close_above_the_last_swing_high_flips_it_up():
     b = compute_bias(df, 2, True)
     crossed = len(path) + int(np.argmax(rally > sh1))                       # first rally candle closing above it
     assert b.iloc[crossed - 1] == -1 and b.iloc[crossed] == 1                # flips on the closing candle
+    assert (b.iloc[crossed:] == 1).all()                                    # and holds (no new swing yet)

@@ -1,6 +1,6 @@
 """
-BIAS (the trend) on D1, H4 and H1. The rules are copied unchanged from smc_bot
-(indicators.py: detect_pivots, compute_bias).
+BIAS (the trend) on D1, H4 and H1. The rules are copied from smc_bot
+(indicators.py: detect_pivots, compute_bias), with the one fix described below.
 
     from bias import htf_bias
     b = htf_bias(df)        # df = your bars (M1, M5, M15 ...), one row per candle
@@ -15,6 +15,9 @@ On each timeframe:
   * anything else (HH + LL, LH + HL) keeps the bias it had
   * a candle CLOSING above the last swing high makes it +1 straight away, closing below
     the last swing low makes it -1 (break of structure)
+  * HH / HL / LH / LL is only re-checked when a new swing is confirmed. (In smc_bot it was
+    re-checked on every candle with the same old swings, so a break of structure was undone
+    on the next candle: gold's D1 read "down" through the Dec 2019 - Jan 2020 rally.)
 
 One change from smc_bot: a D1 / H4 / H1 candle only counts once it has CLOSED.
 smc_bot's align_to_base used the candle still forming (at 09:00 the D1 bias already
@@ -31,7 +34,7 @@ TIMEFRAMES = {"d1": "1D", "h4": "4h", "h1": "1h"}
 
 
 # ---------------------------------------------------------------------------
-# Copied from smc_bot/indicators.py, unchanged
+# Copied from smc_bot/indicators.py (detect_pivots unchanged; compute_bias with the fix above)
 # ---------------------------------------------------------------------------
 
 def detect_pivots(df: pd.DataFrame, lookback: int) -> pd.DataFrame:
@@ -92,6 +95,7 @@ def compute_bias(df: pd.DataFrame, lookback: int, use_close: bool) -> pd.Series:
     pls = df_piv["pivot_low"].values
 
     for i in range(n):
+        new_swing = not np.isnan(phs[i]) or not np.isnan(pls[i])
         if not np.isnan(phs[i]):
             sh2 = sh1
             sh1 = phs[i]
@@ -99,7 +103,9 @@ def compute_bias(df: pd.DataFrame, lookback: int, use_close: bool) -> pd.Series:
             sl2 = sl1
             sl1 = pls[i]
 
-        if not np.isnan(sh1) and not np.isnan(sh2) and \
+        # (changed from smc_bot: only re-checked when a new swing is confirmed, so a break of
+        # structure below holds until the swings say otherwise, instead of for one candle)
+        if new_swing and not np.isnan(sh1) and not np.isnan(sh2) and \
            not np.isnan(sl1) and not np.isnan(sl2):
             if sh1 > sh2 and sl1 > sl2:
                 current_bias = 1
