@@ -16,6 +16,14 @@ New version of the SMC bot, built one indicator at a time. The strategy comes la
   `z = pois(df)`, then `targets(z, when, price, +1)` = take-profit zones above a long, nearest
   first (a used-up one is skipped, so the next one up takes over), and `entries(...)` = zones
   below. Swing points count as targets on H4 / D1 only.
+- `strategy.py`: the two intraday trades (longs below; shorts are the mirror), after D1 + H4 bias:
+  - sniper: staircase up on M15 / M30, the order block at its most recent higher low, price
+    back into it, then smc_dickson's sweep rules on M1 (sweep, break, limit at the new order
+    block, stop under the sweep). Needs M1 data.
+  - momentum order: pause up on M15 / M5, buy the M5 break of structure, stop under the range.
+  Both take profit at the nearest H1 / H4 / D1 POI. `python strategy.py --data M1.csv` lists
+  every trade and prints the results.
+- `show_indicators.py`: every indicator drawn on your chart, as a PDF to check by eye.
 - `smcml/`: the helpers it uses (ATR, swings, FVGs, resampling, the simulator), copied unchanged
 
 ```

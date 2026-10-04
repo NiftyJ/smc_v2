@@ -33,6 +33,8 @@ One row of z:
                 -1 = above price: shorts enter here, longs take profit here
                      (bearish order block, bearish FVG, swing high = buy-side liquidity)
   top, bottom   the zone (a swing point: top = bottom = its price)
+  origin        order blocks only: the low the move started from (bullish: the higher low;
+                bearish: the lower high), NaN for the others
   formed        start of the candle the zone is (order block candle, FVG middle candle, swing candle)
   known         when it is first known: the close of the candle that confirms it
   used          the close of the candle on your chart that used it up; NaT = still live
@@ -56,7 +58,8 @@ USED_BY = {"ob": "mitigated", "fvg": "filled", "swing": "swept"}
 def _found(o, h, l, c, n):
     """Up versions on one timeframe's candles: swing lows, bullish order blocks, bullish FVGs.
     (On the flipped chart the same code finds swing highs, bearish OBs and bearish FVGs.)
-    Returns (kind, candle the zone is, top, bottom, candle whose close confirms it)."""
+    Returns (kind, candle the zone is, top, bottom, candle whose close confirms it, origin);
+    origin = for an order block, the low the move started from (the higher low), else NaN."""
     out = []
     sw = SwingTracker(n)
     st = StructureTracker(sw)
@@ -65,15 +68,15 @@ def _found(o, h, l, c, n):
         sw.update(t, h, l)
         if sw.last_low is not None and sw.last_low.idx != seen:
             seen = sw.last_low.idx
-            out.append(("swing", seen, l[seen], l[seen], t))
+            out.append(("swing", seen, l[seen], l[seen], t, np.nan))
         for d, _, broken in st.update(t, c):
             if d == 1:                                          # close above the last swing high
                 s = broken.idx
                 leg = s + 1 + int(np.argmin(l[s + 1:t + 1]))    # the low the move started from
                 k, top, bot = find_order_block(o, h, l, c, leg)
-                out.append(("ob", k, top, bot, t))
+                out.append(("ob", k, top, bot, t, l[leg]))
     for k, top, bot in find_fvgs(h, l, 0, len(c) - 1):
-        out.append(("fvg", k - 1, top, bot, k))
+        out.append(("fvg", k - 1, top, bot, k, np.nan))
     return out
 
 
@@ -116,11 +119,11 @@ def pois(df, tfs=TIMEFRAMES, swing_n=SWING_N):
         start, end = bars.index, bars.index + pd.Timedelta(tf)
         o, h, l, c = (bars[k].to_numpy(float) for k in ("open", "high", "low", "close"))
         for d in (1, -1):
-            for kind, k, top, bot, kn in _found(*mirror(o, h, l, c, d), swing_n):
+            for kind, k, top, bot, kn, origin in _found(*mirror(o, h, l, c, d), swing_n):
                 if d == -1:
-                    top, bot = -bot, -top                       # back to real prices
-                rows.append((tf, NAMES[kind, d], kind, d, top, bot, start[k], end[kn]))
-    z = pd.DataFrame(rows, columns=["tf", "type", "kind", "dir", "top", "bottom", "formed", "known"])
+                    top, bot, origin = -bot, -top, -origin      # back to real prices
+                rows.append((tf, NAMES[kind, d], kind, d, top, bot, origin, start[k], end[kn]))
+    z = pd.DataFrame(rows, columns=["tf", "type", "kind", "dir", "top", "bottom", "origin", "formed", "known"])
     base = bar_length(df.index)
     z = z[z["known"] <= df.index[-1] + base].reset_index(drop=True)   # only zones knowable within your data
 
