@@ -20,9 +20,10 @@ New version of the SMC bot, built one indicator at a time. The strategy comes la
   - sniper: staircase up on M15 / M30, the order block at its most recent higher low, price
     back into it, then smc_dickson's sweep rules on M1 (sweep, break, limit at the new order
     block, stop under the sweep). Needs M1 data.
-  - momentum order: pause up on M15 / M5, buy the M5 break of structure, stop under the range.
-  Both take profit at the nearest H1 / H4 / D1 POI. `python strategy.py --data M1.csv` lists
+  - momentum order: pause up on M5, buy the M5 break of structure, stop under the range.
+  Take-profit: sniper = the nearest H1 / H4 / D1 POI at least 12R away (else 12R); momentum = 5R. `python strategy.py --data M1.csv` lists
   every trade and prints the results.
+- `show_trades.py`: every trade drawn start to finish (POI, M1 sweep, entry, stop, take-profit), as a PDF.
 - `show_indicators.py`: every indicator drawn on your chart, as a PDF to check by eye.
 - `smcml/`: the helpers it uses (ATR, swings, FVGs, resampling, the simulator), copied unchanged
 

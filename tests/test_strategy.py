@@ -60,7 +60,13 @@ def test_every_trade_follows_the_rules():
         j = DF.index.get_loc(r.placed - BASE)                       # the candle closing at the decision
         assert bias["bias_d1"].iat[j] == d and bias["bias_h4"].iat[j] == d
         assert d * (r.entry - r.stop) > 0 and d * (r.target - r.entry) > 0
-        assert targets(z, r.placed, r.entry, d).iloc[0]["level"] == r.target      # the nearest live POI
+        if r.type == "momentum":
+            assert np.isclose(r.rr, 5)                              # momentum: 5R
+        else:
+            assert r.rr >= 12 - 1e-9                                # sniper: at least 12R
+            far = targets(z, r.placed, r.entry, d)
+            far = far[(far["level"] - r.entry) * d >= 12 * r.risk]
+            assert r.target == (far.iloc[0]["level"] if len(far) else r.entry + d * 12 * r.risk)
         if r.outcome == "stop":
             assert np.isclose(r.R, -1)
         if r.outcome == "target":

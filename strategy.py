@@ -14,12 +14,12 @@ Bias first (bias.py): D1 and H4 both up for longs, both down for shorts.
      sweep's low. Not filled within 40 candles = cancelled.
    * the setup is dropped once an M1 candle closes below the higher low, or 1 day after the touch
 2. MOMENTUM ORDER (larger stop)
-   * a pause up range (range_types.py) on M15 or M5
+   * a pause up range (range_types.py) on M5
    * buy at the close of the M5 candle that breaks structure up (closes above the last M5
      swing high) while the pause is on. Stop just under the lowest point of the range.
    * one per pause
-Both: take profit at the nearest live H1 / H4 / D1 point of interest beyond the entry
-(poi.targets); no target = no trade. Then stop or target, whichever comes first. If one M1
+Take profit: sniper = the nearest live H1 / H4 / D1 point of interest at least 12R away
+(else 12R); momentum = 5R. Then stop or target, whichever comes first. If one M1
 candle reaches both, the stop counts.
 
     from strategy import backtest, report
@@ -47,7 +47,9 @@ from poi import pois, targets, _first_at_or_below  # noqa: E402
 @dataclass
 class Settings:
     STAIR_TFS: tuple = ("15min", "30min")   # where the sniper looks for a staircase
-    PAUSE_TFS: tuple = ("15min", "5min")    # where the momentum order looks for a pause
+    PAUSE_TFS: tuple = ("5min",)            # where the momentum order looks for a pause (5 min ranges)
+    SNIPER_MIN_R: float = 12.0              # sniper take-profit: at least 12R
+    MOMENTUM_R: float = 5.0                 # momentum take-profit: 5R
     SWING_N: int = 5                        # M1 / M5 swing = 5 candles each side (smc_dickson SWING_N)
     ATR_N: int = 14
     MAX_BARS_SWEEP_TO_SHIFT: int = 30       # smc_dickson: the break must come within 30 candles of the sweep
@@ -164,9 +166,15 @@ class SweepMachine:
 
 
 # ----------------------------------------------------------------------------- the trades
-def _target(z, when, entry, d):
+def _target(z, when, entry, stop, d, min_r):
+    """The nearest live H1 / H4 / D1 point of interest at least min_r R beyond the entry;
+    if there is none that far, a plain min_r R target."""
+    risk = abs(entry - stop)
     t = targets(z, when, entry, d)
-    return None if t.empty else t.iloc[0]
+    t = t[(t["level"] - entry) * d >= min_r * risk]
+    if t.empty:
+        return pd.Series(dict(level=entry + d * min_r * risk, tf="", type=f"{min_r:g}R"))
+    return t.iloc[0]
 
 
 def _finish(row, lo, hi, closes, times, base, start, d, target_from, cost):
@@ -238,13 +246,13 @@ def _sniper(df, s, bias, z, base):
                 continue
             entry, stop = d * cand["entry"], d * cand["stop"]
             when = pd.Timestamp(closes_t[t])
-            tg = _target(z, when, entry, d)
-            if tg is None:
-                continue
+            tg = _target(z, when, entry, stop, d, s.SNIPER_MIN_R)
             risk = abs(entry - stop)
             row = dict(type="sniper", direction=d, placed=when, entry=entry, stop=stop, target=tg["level"],
                        target_tf=tg["tf"], target_type=tg["type"], risk=risk, rr=abs(tg["level"] - entry) / risk,
-                       sweep_time=pd.Timestamp(times[cand["sweep_bar"]]), **pois_by_dir[d][p][2])
+                       sweep_time=pd.Timestamp(times[cand["sweep_bar"]]), swept=d * cand["swept"],
+                       broken=d * cand["broken"], m1_ob_time=pd.Timestamp(times[cand["ob_bar"]]),
+                       **pois_by_dir[d][p][2])
             last = min(t + s.MAX_BARS_WAIT_FILL, n - 1)
             fill = (l[t + 1:last + 1] <= entry) if d == 1 else (h[t + 1:last + 1] >= entry)
             if not fill.any():
@@ -300,9 +308,7 @@ def _momentum(df, s, bias, z, base):
                 if not risk > 0:
                     continue
                 when = pd.Timestamp(m5_close[m])
-                tg = _target(z, when, entry, d)
-                if tg is None:
-                    continue
+                tg = pd.Series(dict(level=entry + d * s.MOMENTUM_R * risk, tf="", type=f"{s.MOMENTUM_R:g}R"))
                 row = dict(type="momentum", direction=d, placed=when, entry=entry, stop=stop, target=tg["level"],
                            target_tf=tg["tf"], target_type=tg["type"], risk=risk, rr=abs(tg["level"] - entry) / risk,
                            tf=tf, pause_top=P["pause_top"].iat[k], pause_bottom=P["pause_bottom"].iat[k],
