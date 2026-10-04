@@ -141,12 +141,13 @@ class SweepMachine:
             sl = self.sw.last_low
             if sl is not None and sl.swept_at < 0 and l[t] < sl.price:
                 sl.swept_at = t
-                self.state, self.sweep_bar, self.swept = "SWEPT", t, sl.price
+                self.state, self.sweep_bar, self.swept, self.swept_bar = "SWEPT", t, sl.price, sl.idx
                 self.ext, self.ext_bar = l[t], t
             return None
         if l[t] < self.ext:
             self.ext, self.ext_bar = l[t], t
-        if any(e[0] == 1 for e in events):
+        up = [e for e in events if e[0] == 1]
+        if up:
             self.state = "IDLE"
             a = self.a[t]
             ob_bar, ob_top, ob_bot = find_order_block(o, h, l, c, self.ext_bar)
@@ -154,7 +155,9 @@ class SweepMachine:
             stop = self.ext - s.STOP_BUFFER_ATR * a
             if not np.isfinite(a) or a <= 0 or entry - stop < s.MIN_RISK_ATR * a:
                 return None
-            return dict(entry=entry, stop=stop, sweep_bar=self.sweep_bar, swept=self.swept, ob_bar=ob_bar)
+            return dict(entry=entry, stop=stop, sweep_bar=self.sweep_bar, swept=self.swept, ob_bar=ob_bar,
+                        swept_bar=self.swept_bar, ext_bar=self.ext_bar, broken_bar=up[0][2].idx,
+                        broken=up[0][2].price, kind=up[0][1])
         if t - self.sweep_bar >= s.MAX_BARS_SWEEP_TO_SHIFT:
             self.state = "IDLE"
         return None
