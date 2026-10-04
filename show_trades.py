@@ -100,7 +100,8 @@ def sniper_page(pdf, df, r, n, scale, fmt, label):
     fig = plt.figure(figsize=PAGE)
     gs = fig.add_gridspec(1, 2, width_ratios=[1, 1.35], left=0.06, right=0.84, top=0.86, bottom=0.09, wspace=0.12)
     ax1, ax2 = fig.add_subplot(gs[0]), fig.add_subplot(gs[1])
-    fig.text(0.06, 0.95, f"Sniper trade {n} ({'long' if d == 1 else 'short'}): {pd.Timestamp(r.placed):%d %b %Y %H:%M}{label}",
+    fig.text(0.06, 0.95, f"Sniper trade {n} ({'long' if d == 1 else 'short'}, try {int(r.shot)} at this POI): "
+                         f"{pd.Timestamp(r.placed):%d %b %Y %H:%M}{label}",
              fontsize=15, fontweight="bold")
     fig.text(0.06, 0.915, f"D1 and H4 bias {word}.  Left: the {tf.replace('min', ' min')} POI.  Right: the M1 sweep, "
                           f"entry, stop and take-profit.", fontsize=9.5, color=INK2)

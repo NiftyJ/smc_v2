@@ -90,6 +90,12 @@ def test_every_trade_follows_the_rules():
             k = P.index[P.index + tf <= r.placed - pd.Timedelta("5min")][-1]        # last pause candle before it
             assert P.loc[k, "pause"] == 1 and P.loc[k, "pause_dir"] == d
             assert (r.stop < r.pause_bottom) if d == 1 else (r.stop > r.pause_top)  # beyond the whole range
+    sn = TR[TR["type"] == "sniper"]
+    assert (sn["shot"] > 1).any()                                   # re-entries happen in this sample
+    for _, g in sn.groupby("poi_touch"):                            # per POI: at most 3 tries, each after a stop
+        assert len(g) <= 3 and list(g["shot"]) == list(range(1, len(g) + 1))
+        assert (g["outcome"].iloc[:-1] == "stop").all()
+        assert (g["placed"].iloc[1:].to_numpy() > g["exit_time"].iloc[:-1].to_numpy()).all()
     mom = TR[TR["type"] == "momentum"]
     assert mom.groupby(["tf", "pause_start", "direction"]).size().max() == 1   # one per pause
 

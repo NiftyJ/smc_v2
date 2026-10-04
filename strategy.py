@@ -15,6 +15,8 @@ Bias first (bias.py): D1 and H4 both up for longs, both down for shorts.
    * not filled, and price builds the next range (e.g. a pause up)? Each new M1 break up inside
      it moves the order to the open of the new order block, stop under that range's low
    * cancelled on a close below the stop's range or below the higher low, or 1 day after the touch
+   * stopped out? Another try (up to 3 per POI) once an M1 candle closes above the previous M1
+     swing high again: the same order rules, from that break
 2. MOMENTUM ORDER (larger stop)
    * a pause up range (range_types.py) on M5
    * buy at the close of the M5 candle that breaks structure up (closes above the last M5
@@ -59,6 +61,7 @@ class Settings:
     STOP_BUFFER_ATR: float = 0.05           # smc_dickson: the stop goes this far beyond the extreme
     MIN_RISK_ATR: float = 0.25              # smc_dickson: skip setups whose stop is tighter than this
     SNIPER_WINDOW: str = "1D"               # an M1 entry may come up to this long after the touch
+    SNIPER_MAX_SHOTS: int = 3               # tries per POI: after a stop-out, another on a new M1 break up (journal: "max 3 tries")
     COST: float = 0.0                       # spread + commission per trade, in price units
 
 
@@ -236,6 +239,7 @@ def _sniper(df, s, bias, z, base):
     machines = {d: SweepMachine(*flipped[d], a, s) for d in (1, -1)}
     b1, b4 = bias["bias_d1"].to_numpy(), bias["bias_h4"].to_numpy()
     pending = {1: None, -1: None}                       # the order waiting to be filled, per direction
+    rearm = {1: None, -1: None}                         # after a stop-out: waiting for a new M1 break up
     rows = []
 
     def place(d, t, ob_bar, range_low, order, base_row):
@@ -265,8 +269,12 @@ def _sniper(df, s, bias, z, base):
                                target=tg["level"], target_tf=tg["tf"], target_type=tg["type"], risk=risk,
                                rr=abs(tg["level"] - entry) / risk, m1_ob_time=pd.Timestamp(times[q["ob_bar"]]),
                                order="first range" if q["order"] == 1 else f"next range ({q['order']})",
-                               filled=pd.Timestamp(times[t]))
-                    rows.append(_finish(row, l, h, c, times, base, t, d, t + 1, s.COST))
+                               shot=q["shot"], filled=pd.Timestamp(times[t]))
+                    row = _finish(row, l, h, c, times, base, t, d, t + 1, s.COST)
+                    rows.append(row)
+                    if row["outcome"] == "stop" and q["shot"] < s.SNIPER_MAX_SHOTS:   # stopped: another try later
+                        j = int(np.searchsorted(closes_t, row["exit_time"].to_datetime64()))
+                        rearm[d] = dict(start=j + 1, info=q["info"], expires=q["expires"], shot=q["shot"] + 1)
                     continue
                 hl = d * q["info"]["hl"]
                 if C[t] < q["stop_f"] or C[t] < hl or t >= q["expires"]:   # range or higher low broken, or too late
@@ -281,6 +289,22 @@ def _sniper(df, s, bias, z, base):
                         if new is not q:
                             pending[d] = new
                 continue
+            r_ = rearm[d]
+            if r_ is not None and t >= r_["start"]:     # ---- after a stop-out: a new M1 break up?
+                if t >= r_["expires"] or C[t] < d * r_["info"]["hl"]:
+                    rearm[d] = None
+                else:
+                    for e in m.events:
+                        if e[0] == 1 and b1[t] == d and b4[t] == d:
+                            k = e[2].idx
+                            leg = k + 1 + int(np.argmin(L[k + 1:t + 1]))
+                            q = place(d, t, find_order_block(O, H, L, C, leg)[0], L[leg], 1, None)
+                            if q is not None:
+                                q.update(info=r_["info"], expires=r_["expires"], shot=r_["shot"])
+                                pending[d], rearm[d] = q, None
+                            break
+                    if pending[d] is not None:
+                        continue
             if cand is None:
                 continue
             t1 = pois_by_dir[d][p][1]
@@ -293,7 +317,7 @@ def _sniper(df, s, bias, z, base):
                         first_bos=pd.Timestamp(closes_t[t]))
             q = place(d, t, cand["ob_bar"], L[cand["ext_bar"]], 1, None)    # first range: its low = the sweep's low
             if q is not None:
-                q.update(info=info, expires=min(pois_by_dir[d][p][0] + window, n))
+                q.update(info=info, expires=min(pois_by_dir[d][p][0] + window, n), shot=1)
                 pending[d] = q
     return rows
 
