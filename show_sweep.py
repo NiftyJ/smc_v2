@@ -10,7 +10,8 @@ Each example page shows the same chart four times, revealing candles as the code
   3. the break: within 30 candles, a candle closes above the swing high -> a buy limit at the
      top of the order block (the last down candle at or before the sweep's low), stop just
      under the sweep's low
-  4. what happened next: filled or not (40 candles), then stop or 3R
+  4. the trade: the fill (entry), the stop, and the target = the nearest live H1 / H4 / D1
+     point of interest above, as in the strategy; then which one was hit
 The strategy runs these rules on M1; this picture uses whatever candles you give it.
 """
 import argparse
@@ -29,6 +30,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from smcml.data import load_mt5_csv  # noqa: E402
 from smcml.detectors import atr  # noqa: E402
 from strategy import SweepMachine, Settings, walk  # noqa: E402
+from poi import pois, targets  # noqa: E402
 
 BULL, BEAR, INK, INK2, MUTED, GRID, SURFACE = "#2a78d6", "#eb6834", "#0b0b0b", "#52514e", "#8a8984", "#e4e3df", "#fcfcfb"
 plt.rcParams.update({"font.size": 8.5, "text.color": INK, "axes.edgecolor": GRID, "xtick.color": INK2,
@@ -78,97 +80,118 @@ def note(ax, text):
             bbox=dict(fc=SURFACE, ec=GRID, lw=0.6, pad=3), zorder=10)
 
 
-def example_page(pdf, df, order, n_example, scale, s):
+def example_page(pdf, df, z, order, n_example, scale, s):
     t, n = order["t"], s.SWING_N
-    i0 = max(order["swept_bar"] - 15, 0)
-    i1 = min(t + 70, len(df) - 1)
-    bars = df.iloc[i0:i1 + 1]
-    lo, hi = bars["low"].min() * scale, bars["high"].max() * scale
-    ylim = (lo - (hi - lo) * 0.06, hi + (hi - lo) * 0.45)
-    sw_lo, sw_hi = order["swept"] * scale, order["broken"] * scale
-    sb, bb, sweep, ext, ob = (order[k] - i0 for k in ("swept_bar", "broken_bar", "sweep_bar", "ext_bar", "ob_bar"))
-    tt = t - i0
-    entry, stop = order["entry"] * scale, order["stop"] * scale
-    risk = entry - stop
-    target = entry + 3 * risk
-    l, h = df["low"].to_numpy(float) * scale, df["high"].to_numpy(float) * scale
+    l_raw, h_raw = df["low"].to_numpy(float), df["high"].to_numpy(float)
+    entry_raw, stop_raw = order["entry"], order["stop"]
+    when = df.index[t] + pd.Timedelta(df.index[1] - df.index[0])
+    tg = targets(z, when, entry_raw, 1)
+    target_raw = tg.iloc[0]["level"] if len(tg) else entry_raw + 3 * (entry_raw - stop_raw)
+    target_name = f"{tg.iloc[0]['tf'].replace('1D', 'D1').replace('4h', 'H4').replace('1h', 'H1')} " \
+                  f"{tg.iloc[0]['type'].replace('_', ' ')}" if len(tg) else "3R (no POI above)"
     last = min(t + s.MAX_BARS_WAIT_FILL, len(df) - 1)
-    fill = np.flatnonzero(l[t + 1:last + 1] <= entry)
+    fill = np.flatnonzero(l_raw[t + 1:last + 1] <= entry_raw)
     f = t + 1 + fill[0] if len(fill) else None
-    if f is not None:
-        j, outcome = walk(l, h, f, 1, stop, target, f + 1)
+    j, outcome = (walk(l_raw, h_raw, f, 1, stop_raw, target_raw, f + 1) if f is not None else (None, "not filled"))
+    i0 = max(order["swept_bar"] - 12, 0)
+    i1 = min(max(t + 40, (j if j is not None else t) + 15), len(df) - 1, t + 400)
+    bars = df.iloc[i0:i1 + 1]
+    lo = min(bars["low"].min(), stop_raw) * scale
+    hi = max(bars["high"].max(), target_raw if target_raw < bars["high"].max() * 1.02 else bars["high"].max()) * scale
+    ylim = (lo - (hi - lo) * 0.06, hi + (hi - lo) * 0.30)
+    sw_lo, sw_hi = order["swept"] * scale, order["broken"] * scale
+    sb, bb, sweep, ob = (order[k] - i0 for k in ("swept_bar", "broken_bar", "sweep_bar", "ob_bar"))
+    tt = t - i0
+    entry, stop, target = entry_raw * scale, stop_raw * scale, target_raw * scale
+    risk = entry - stop
     fmt = lambda v: f"${v:,.2f}" if scale != 1 else f"{v:,.5g}"
-    known_at = lambda bar: max(bar + n, 0)                     # a swing is known n candles after it forms
+    known_at = lambda bar: bar + n
+    earlier = np.flatnonzero(bars["low"].to_numpy()[known_at(sb) + 1:max(sweep, 0)] * scale < sw_lo)
 
-    earlier = np.flatnonzero(bars["low"].to_numpy()[known_at(sb) + 1:sweep] * scale < sw_lo)
-    late = ("\n   Note: price had already gone under it earlier, while the code was still\n"
-            "   waiting on the previous sweep; it counts a sweep only once it is free again."
-            if len(earlier) else "")
-    fig, axes = plt.subplots(2, 2, figsize=PAGE, sharey=True)
-    fig.subplots_adjust(left=0.06, right=0.98, top=0.88, bottom=0.07, hspace=0.28, wspace=0.05)
-    fig.text(0.06, 0.95, f"Sweep example {n_example}: {df.index[order['sweep_bar']]:%d %b %Y %H:%M}",
+    fig = plt.figure(figsize=PAGE)
+    gs = fig.add_gridspec(2, 3, height_ratios=[1, 1.6], left=0.06, right=0.80, top=0.88, bottom=0.07,
+                          hspace=0.25, wspace=0.06)
+    small = [fig.add_subplot(gs[0, k]) for k in range(3)]
+    big = fig.add_subplot(gs[1, :])
+    fig.text(0.06, 0.95, f"Sweep entry example {n_example}: {df.index[order['sweep_bar']]:%d %b %Y}",
              fontsize=15, fontweight="bold")
-    fig.text(0.06, 0.915, "The same candles four times: each panel shows only what the code had seen by then.",
-             fontsize=9.5, color=INK2)
-    steps = [
-        (axes[0, 0], sweep - 1, "1. Before the sweep: the last swing low it knows,\n"
-                                f"   {fmt(sw_lo)} (lowest low with 5 candles each side; the dot marks\n"
-                                "   the candle where it became known)."),
-        (axes[0, 1], sweep, f"2. The sweep: this candle trades below the swing low ({fmt(sw_lo)}).\n"
-                            "   State: SWEPT. Now it waits up to 30 candles for a break up,\n"
-                            "   and keeps track of the lowest point." + late),
-        (axes[1, 0], tt, f"3. The break ({order['kind']}): this candle closes above the last swing high ({fmt(sw_hi)}),\n"
-                         f"   {tt - sweep} candles after the sweep. Order: buy limit {fmt(entry)} at the top of the\n"
-                         f"   order block, stop {fmt(stop)} just under the sweep's low."),
-        (axes[1, 1], len(bars) - 1, None),
-    ]
-    for ax, upto, text in steps:
-        draw(ax, bars, 0, upto, scale, ylim)
-        if upto >= known_at(sb) - 0:
+    fig.text(0.06, 0.915, "Top: the three steps, each showing only the candles the code had seen by then.  "
+                          "Bottom: the trade, from the order to the exit.", fontsize=9.5, color=INK2)
+
+    def marks(ax, upto, big_chart=False):
+        if upto >= known_at(sb):
             ax.plot([sb, min(upto, sweep) + 0.5], [sw_lo, sw_lo], color=BULL, lw=1.2, zorder=5)
-            ax.plot(sb, sw_lo, "^", color=BULL, ms=6, zorder=6)
-            ax.plot(min(known_at(sb), upto), sw_lo, "o", ms=4, mfc=SURFACE, mec=BULL, zorder=6)
+            ax.plot(sb, sw_lo, "^", color=BULL, ms=5, zorder=6)
+            ax.text(sb - 0.5, sw_lo, "swing low ", fontsize=6.5, ha="right", va="center", color=INK2)
         if upto >= known_at(bb):
             ax.plot([bb, min(upto, tt) + 0.5], [sw_hi, sw_hi], color=BEAR, lw=1.2, zorder=5)
-            ax.plot(bb, sw_hi, "v", color=BEAR, ms=6, zorder=6)
-            ax.plot(min(known_at(bb), upto), sw_hi, "o", ms=4, mfc=SURFACE, mec=BEAR, zorder=6)
+            ax.plot(bb, sw_hi, "v", color=BEAR, ms=5, zorder=6)
+            ax.text(bb, sw_hi, "  swing high", fontsize=6.5, va="bottom", color=INK2)
         if upto >= sweep:
-            ax.annotate("sweep", (sweep, l[order["sweep_bar"]]), xytext=(0, -14), textcoords="offset points",
-                        ha="center", fontsize=7.5, fontweight="bold", arrowprops=dict(arrowstyle="-", color=INK2))
+            ax.annotate("sweep", (sweep, l_raw[order["sweep_bar"]] * scale), xytext=(0, -13), textcoords="offset points",
+                        ha="center", fontsize=7, fontweight="bold", arrowprops=dict(arrowstyle="-", color=INK2))
         if upto >= tt:
-            ax.annotate("break", (tt, h[t]), xytext=(0, 12), textcoords="offset points", ha="center",
-                        fontsize=7.5, fontweight="bold", arrowprops=dict(arrowstyle="-", color=INK2))
+            ax.annotate("break", (tt, h_raw[t] * scale), xytext=(0, 11), textcoords="offset points", ha="center",
+                        fontsize=7, fontweight="bold", arrowprops=dict(arrowstyle="-", color=INK2))
             obb = df.iloc[order["ob_bar"]]
             ax.add_patch(Rectangle((ob - 0.45, obb["low"] * scale), 0.9, (obb["high"] - obb["low"]) * scale,
-                                   fill=False, ec=BULL, lw=1.6, zorder=7))
-            ax.text(ob, obb["high"] * scale, " order\n block", fontsize=7, color=INK, va="bottom", zorder=8)
-            end = len(bars) - 1 if upto == len(bars) - 1 else upto
-            ax.plot([tt, end + 0.5], [entry, entry], color=BULL, lw=1.3, ls="--", zorder=5)
-            ax.plot([tt, end + 0.5], [stop, stop], color=INK, lw=1.0, ls=":", zorder=5)
-            ax.text(end + 0.6, entry, " limit", fontsize=7, va="center", color=INK, clip_on=False)
-            ax.text(end + 0.6, stop, " stop", fontsize=7, va="center", color=INK, clip_on=False)
-        if text:
-            note(ax, text)
-    ax = axes[1, 1]
-    ax.plot([tt, len(bars) - 0.5], [target, target], color=BEAR, lw=1.0, ls="--", zorder=5)
-    ax.text(len(bars) - 0.4, target, " 3R", fontsize=7, va="center", color=INK, clip_on=False)
-    ax.axvline(tt + 0.5, color=MUTED, lw=0.8, ls="--")
+                                   fill=False, ec=BULL, lw=1.5, zorder=7))
+
+    texts = [(sweep - 1, f"1. Waiting. Last swing low {fmt(sw_lo)}."),
+             (sweep, "2. Sweep: a candle trades below it.\n   Now 30 candles to break up."
+              + ("\n   (price was under it earlier, but the\n   code was busy with the previous sweep)" if len(earlier) else "")),
+             (tt, f"3. Break: close above the swing high,\n   {tt - sweep} candles later. Buy limit at the\n"
+                  f"   order block top {fmt(entry)}, stop {fmt(stop)}.")]
+    for ax, (upto, text) in zip(small, texts):
+        draw(ax, bars.iloc[:max(tt + 3, 1)], 0, upto, scale, ylim)
+        marks(ax, upto)
+        note(ax, text)
+        ax.set_xticks([])
+        if ax is not small[0]:
+            ax.set_yticklabels([])
+
+    # ---- the trade
+    draw(big, bars, 0, len(bars) - 1, scale, ylim)
+    marks(big, len(bars) - 1, True)
+    big.axvline(tt + 0.5, color=MUTED, lw=0.8, ls="--")
+    big.text(tt + 0.7, ylim[0], "order placed", fontsize=7.5, color=INK2, va="bottom")
+    x_end = (j - i0 if j is not None else len(bars) - 1) + 0.5
+    if f is not None:
+        x0 = f - i0 - 0.5
+        big.add_patch(Rectangle((x0, entry), x_end - x0, target - entry, fc=BULL, alpha=0.15, lw=0, zorder=1))
+        big.add_patch(Rectangle((x0, stop), x_end - x0, entry - stop, fc=BEAR, alpha=0.18, lw=0, zorder=1))
+        big.annotate(f"ENTRY  buy {fmt(entry)}\n{df.index[f]:%d %b %H:%M}", (f - i0, entry), xytext=(-60, -38),
+                     textcoords="offset points", fontsize=8, fontweight="bold", color=INK,
+                     arrowprops=dict(arrowstyle="->", color=INK, lw=1.2), zorder=9)
+        big.plot(f - i0, entry, "o", ms=7, color=BULL, mec=INK, zorder=9)
+    big.plot([tt, x_end], [entry, entry], color=BULL, lw=1.3, ls="--", zorder=5)
+    big.plot([tt, x_end], [stop, stop], color=BEAR, lw=1.3, zorder=5)
+    big.plot([tt, x_end], [target, target], color=BULL, lw=1.3, zorder=5)
+    rr = (target - entry) / risk
+    right = len(bars) - 0.5
+    gap = (ylim[1] - ylim[0]) * 0.035                          # keep the three labels apart
+    ys = [target, entry, stop]
+    ys = [max(ys[0], ys[1] + gap), ys[1], min(ys[2], ys[1] - gap)]
+    for y, ylab, label, col in ((target, ys[0], f" target {fmt(target)}  {target_name}, {rr:.1f}R", BULL),
+                                (entry, ys[1], f" entry {fmt(entry)}", BULL),
+                                (stop, ys[2], f" stop {fmt(stop)}  (1R = {fmt(risk)})", BEAR)):
+        big.plot([x_end, right], [y, y], color=col, lw=0.8, ls=":", zorder=5)
+        big.annotate(label, (right, y), xytext=(right + 0.8, ylab), fontsize=7.5, va="center", color=INK,
+                     annotation_clip=False, arrowprops=dict(arrowstyle="-", color=MUTED, lw=0.5))
     if f is None:
-        result = "Not filled: price never came back to the limit within 40 candles, so the order is cancelled."
+        result = "Not filled: price did not come back to the limit within 40 candles, so the order was cancelled."
+    elif j is None:
+        result = "Filled; still open at the end of the data."
     else:
-        ax.plot(f - i0, entry, "o", ms=6, color=BULL, zorder=8)
-        if j is not None and j <= i1:
-            ax.plot(j - i0, stop if outcome == "stop" else target, "x", ms=8, mew=2, color=INK, zorder=8)
-        result = (f"Filled {f - t} candles after the order. "
-                  + ({"stop": "Then the stop was hit (-1R).", "target": "Then it reached 3R (+3R)."}
-                     .get(outcome, "Still open at the end of the data.")
-                     if j is None or j <= i1 else "Still running past the right edge of this chart."))
-    note(ax, "4. What happened next (the code did not know this when it placed the order).\n   " + result +
-         "\n   (3R is drawn only to show the move; the strategy targets the nearest H1/H4/D1 POI.)")
-    for a_ in axes.flat:
-        ticks = np.linspace(0, len(bars) - 1, 5).astype(int)
-        a_.set_xticks(ticks)
-        a_.set_xticklabels([bars.index[i].strftime("%d %b %H:%M") for i in ticks], fontsize=7)
+        big.plot(j - i0, stop if outcome == "stop" else target, "X", ms=9, color=INK, zorder=9)
+        result = (f"Filled {f - t} candles after the order; "
+                  + (f"stopped out {df.index[j]:%d %b %H:%M} (-1R)." if outcome == "stop"
+                     else f"reached the target {df.index[j]:%d %b %H:%M} (+{rr:.1f}R)."))
+    note(big, "The trade: buy limit at the top of the order block, stop just under the sweep's low, target = the nearest\n"
+              "live H1 / H4 / D1 point of interest above (as in the strategy).  " + result)
+    ticks = np.linspace(0, len(bars) - 1, 7).astype(int)
+    big.set_xticks(ticks)
+    big.set_xticklabels([bars.index[i].strftime("%d %b %H:%M") for i in ticks], fontsize=7.5)
     pdf.savefig(fig)
     plt.close(fig)
 
@@ -223,10 +246,11 @@ def main():
     s = Settings()
     name = args.name or os.path.splitext(os.path.basename(args.data))[0]
     orders = find_orders(df, args.at or str(df.index[200]), args.examples, s)
+    z = pois(df)
     with PdfPages(args.out) as pdf:
         rules_page(pdf, name, s)
         for k, order in enumerate(orders, 1):
-            example_page(pdf, df, order, k, args.scale, s)
+            example_page(pdf, df, z, order, k, args.scale, s)
     print(f"saved {args.out} ({len(orders)} examples)")
 
 
