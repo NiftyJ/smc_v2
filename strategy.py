@@ -8,11 +8,13 @@ Bias first (bias.py): D1 and H4 both up for longs, both down for shorts.
    * inside it, the bullish order block made by the most recent break of structure on that
      timeframe, sitting at the most recent higher low (poi.py). A newer one replaces it.
    * price comes back into that order block (its first touch)
-   * then on M1, smc_dickson's liquidity sweep rules: a candle trades below the last M1 swing
-     low, then a candle closes above the last M1 swing high within 30 candles. Buy limit at the
-     top of the M1 order block that move made (or at the close, if lower), stop just under the
-     sweep's low. Not filled within 40 candles = cancelled.
-   * the setup is dropped once an M1 candle closes below the higher low, or 1 day after the touch
+   * then on M1: a range forms there; its low is swept (a candle trades below the last M1 swing
+     low) and within 30 candles a candle closes above the last M1 swing high (smc_dickson's rules)
+   * the order: a buy limit at the OPEN of the order block of that move, stop just under the low
+     of the range (the sweep's low)
+   * not filled, and price builds the next range (e.g. a pause up)? Each new M1 break up inside
+     it moves the order to the open of the new order block, stop under that range's low
+   * cancelled on a close below the stop's range or below the higher low, or 1 day after the touch
 2. MOMENTUM ORDER (larger stop)
    * a pause up range (range_types.py) on M5
    * buy at the close of the M5 candle that breaks structure up (closes above the last M5
@@ -135,7 +137,7 @@ class SweepMachine:
     def step(self, t, armed):
         o, h, l, c, s = self.o, self.h, self.l, self.c, self.s
         self.sw.update(t, h, l)
-        events = self.st.update(t, c)
+        events = self.events = self.st.update(t, c)
         if not armed:
             self.state = "IDLE"
             return None
@@ -230,38 +232,69 @@ def _sniper(df, s, bias, z, base):
         for p, (t0, t1, _) in sorted(enumerate(pois_by_dir[d]), key=lambda x: x[1][0]):
             own[t0:t1] = p
         owner[d] = own
-    machines = {d: SweepMachine(*mirror(o, h, l, c, d), a, s) for d in (1, -1)}
+    flipped = {d: mirror(o, h, l, c, d) for d in (1, -1)}
+    machines = {d: SweepMachine(*flipped[d], a, s) for d in (1, -1)}
     b1, b4 = bias["bias_d1"].to_numpy(), bias["bias_h4"].to_numpy()
+    pending = {1: None, -1: None}                       # the order waiting to be filled, per direction
     rows = []
+
+    def place(d, t, ob_bar, range_low, order, base_row):
+        """A limit at the OPEN of the order block, stop just beyond the range's low
+        (all in the flipped chart, where every trade is a long)."""
+        O, H, L, C = flipped[d]
+        entry, stop = O[ob_bar], range_low - s.STOP_BUFFER_ATR * a[t]
+        if not (np.isfinite(a[t]) and entry - stop >= s.MIN_RISK_ATR * a[t] and entry < C[t]):
+            return base_row if order > 1 else None      # a bad successive order keeps the one before
+        return dict(base_row or {}, entry_f=entry, stop_f=stop, placed_bar=t, ob_bar=ob_bar, order=order)
+
     for t in range(n):
         for d in (1, -1):
+            O, H, L, C = flipped[d]
             p = owner[d][t]
-            cand = machines[d].step(t, p >= 0)
+            m = machines[d]
+            q = pending[d]
+            cand = m.step(t, p >= 0 and q is None)
+            if q is not None:                           # ---- an order is waiting
+                if t > q["placed_bar"] and L[t] <= q["entry_f"]:          # filled
+                    pending[d] = None
+                    entry, stop = d * q["entry_f"], d * q["stop_f"]
+                    when = pd.Timestamp(closes_t[q["placed_bar"]])
+                    tg = _target(z, when, entry, stop, d, s.SNIPER_MIN_R)
+                    risk = abs(entry - stop)
+                    row = dict(q["info"], type="sniper", direction=d, placed=when, entry=entry, stop=stop,
+                               target=tg["level"], target_tf=tg["tf"], target_type=tg["type"], risk=risk,
+                               rr=abs(tg["level"] - entry) / risk, m1_ob_time=pd.Timestamp(times[q["ob_bar"]]),
+                               order="first range" if q["order"] == 1 else f"next range ({q['order']})",
+                               filled=pd.Timestamp(times[t]))
+                    rows.append(_finish(row, l, h, c, times, base, t, d, t + 1, s.COST))
+                    continue
+                hl = d * q["info"]["hl"]
+                if C[t] < q["stop_f"] or C[t] < hl or t >= q["expires"]:   # range or higher low broken, or too late
+                    pending[d] = None
+                    continue
+                for e in m.events:                      # a new break up: the successive order block
+                    if e[0] == 1:
+                        k = e[2].idx
+                        leg = k + 1 + int(np.argmin(L[k + 1:t + 1]))
+                        ob_bar = find_order_block(O, H, L, C, leg)[0]
+                        new = place(d, t, ob_bar, L[leg], q["order"] + 1, q)
+                        if new is not q:
+                            pending[d] = new
+                continue
             if cand is None:
                 continue
             t1 = pois_by_dir[d][p][1]
             seg = owner[d][t + 1:t1]
-            seg[seg == p] = -1                          # one entry per touch
+            seg[seg == p] = -1                          # one setup per touch
             if b1[t] != d or b4[t] != d:
                 continue
-            entry, stop = d * cand["entry"], d * cand["stop"]
-            when = pd.Timestamp(closes_t[t])
-            tg = _target(z, when, entry, stop, d, s.SNIPER_MIN_R)
-            risk = abs(entry - stop)
-            row = dict(type="sniper", direction=d, placed=when, entry=entry, stop=stop, target=tg["level"],
-                       target_tf=tg["tf"], target_type=tg["type"], risk=risk, rr=abs(tg["level"] - entry) / risk,
-                       sweep_time=pd.Timestamp(times[cand["sweep_bar"]]), swept=d * cand["swept"],
-                       broken=d * cand["broken"], m1_ob_time=pd.Timestamp(times[cand["ob_bar"]]),
-                       **pois_by_dir[d][p][2])
-            last = min(t + s.MAX_BARS_WAIT_FILL, n - 1)
-            fill = (l[t + 1:last + 1] <= entry) if d == 1 else (h[t + 1:last + 1] >= entry)
-            if not fill.any():
-                row.update(filled=pd.NaT, exit_time=pd.NaT, exit=np.nan, outcome="not filled", R=0.0)
-                rows.append(row)
-                continue
-            f = t + 1 + int(np.argmax(fill))
-            row["filled"] = pd.Timestamp(times[f])
-            rows.append(_finish(row, l, h, c, times, base, f, d, f + 1, s.COST))
+            info = dict(pois_by_dir[d][p][2], sweep_time=pd.Timestamp(times[cand["sweep_bar"]]),
+                        swept=d * cand["swept"], broken=d * cand["broken"],
+                        first_bos=pd.Timestamp(closes_t[t]))
+            q = place(d, t, cand["ob_bar"], L[cand["ext_bar"]], 1, None)    # first range: its low = the sweep's low
+            if q is not None:
+                q.update(info=info, expires=min(pois_by_dir[d][p][0] + window, n))
+                pending[d] = q
     return rows
 
 

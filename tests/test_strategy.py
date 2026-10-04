@@ -40,14 +40,14 @@ def test_shapes_match_range_types():
 
 def test_only_closed_candles_are_used():
     for kind in ("sniper", "momentum"):
-        for placed in TR.loc[TR["type"] == kind, "placed"].iloc[[0, -1]]:
-            T = DF.index.get_loc(placed - BASE) + 1                 # right after the decision candle
+        for filled in TR.loc[TR["type"] == kind, "filled"].dropna().iloc[[0, -1]]:
+            T = DF.index.get_loc(filled) + 1                        # right after the candle the order filled on
             crash = DF.copy()
             crash.iloc[T:] *= 0.5                                   # the future: a 50% crash
             for other in (DF.iloc[:T], crash):                      # future removed, or changed
                 part = backtest(other)
-                a = TR[TR["placed"] <= placed][DECISION].reset_index(drop=True)
-                b = (part[part["placed"] <= placed] if len(part) else pd.DataFrame(columns=DECISION))[DECISION]
+                a = TR[TR["filled"] <= filled][DECISION].reset_index(drop=True)
+                b = (part[part["filled"] <= filled] if len(part) else pd.DataFrame(columns=DECISION))[DECISION]
                 b = b.reset_index(drop=True).astype(a.dtypes.to_dict())
                 pd.testing.assert_frame_equal(a, b)
 

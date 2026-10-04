@@ -6,7 +6,8 @@ Every trade the strategy takes, drawn from start to finish, as a PDF.
 
 Sniper page:   left = the M15 / M30 chart: the staircase range, the order block (the POI) at the
                higher low, where price came back into it.  Right = the M1 chart from that touch:
-               the swing low, the sweep, the break, the entry, stop and take-profit (12R or more).
+               the sweep, the break, the order at the open of the order block (moved to the next
+               range's order block if not filled), stop under the range, take-profit 12R or more.
 Momentum page: the M5 chart: the pause range, the M5 break of structure, the entry, the stop
                under the range, the 5R take-profit.
 """
@@ -158,8 +159,9 @@ def sniper_page(pdf, df, r, n, scale, fmt, label):
     outcome = position(ax2, m1, r, scale, fmt, base)
     note(ax2, f"4. M1: price trades {'below the last swing low' if d == 1 else 'above the last swing high'} (sweep),\n"
               f"   then closes {'above the last swing high' if d == 1 else 'below the last swing low'} (break).\n"
-              f"5. Limit at the M1 order block (black box), stop beyond the sweep,\n"
-              f"   take-profit at least 12R.  Result: {outcome}.")
+              f"5. Order ({r.order}): limit at the OPEN of the M1 order block (black box),\n"
+              f"   stop under that range's low; if not filled, the next range's order block replaces it.\n"
+              f"   Take-profit at least 12R.  Result: {outcome}.")
     pdf.savefig(fig)
     plt.close(fig)
 
