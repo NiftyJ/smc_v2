@@ -15,8 +15,10 @@ Bias first (bias.py): D1 and H4 both up for longs, both down for shorts.
    * not filled, and price builds the next range (e.g. a pause up)? Each new M1 break up inside
      it moves the order to the open of the new order block, stop under that range's low
    * cancelled on a close below the stop's range or below the higher low, or 1 day after the touch
-   * stopped out? Another try (up to 3 per POI) once an M1 candle closes above the previous M1
-     swing high again: the same order rules, from that break
+   * stopped out? Another try (up to 3 per POI): wait for an M1 close above the high of the failed
+     try (or the highest high before the next low: the real swing high), then FVG momentum: a
+     bearish candle pulls back into the FVG the break left, and the next candle that closes above
+     that bearish candle's high is the entry (at its close), stop under the bearish candle's low
 2. MOMENTUM ORDER (larger stop)
    * a pause up range (range_types.py) on M5
    * buy at the close of the M5 candle that breaks structure up (closes above the last M5
@@ -125,10 +127,11 @@ def walk(lo, hi, start, d, stop, target, target_from=None):
 
 
 class SweepMachine:
-    """smc_dickson's setup rules (smcml/setups.py, SetupMachine), up version, on one chart:
+    """The liquidity sweep (from smc_dickson's setup rules), up version, on one chart:
         IDLE  --(a candle trades below the last swing low: liquidity sweep)--> SWEPT
-        SWEPT --(a close above the last swing high within MAX_BARS_SWEEP_TO_SHIFT)--> an order
-        SWEPT --(too long)--> IDLE
+        SWEPT --(a candle CLOSES above the real swing high: the highest high between the sweep and
+                 the lowest point after it, or the last swing high if higher)--> an order
+        SWEPT --(30 candles without a new low or a break)--> IDLE
     It only acts while armed; disarmed, it goes back to IDLE (swings keep updating)."""
 
     def __init__(self, o, h, l, c, a, s):
@@ -153,8 +156,14 @@ class SweepMachine:
             return None
         if l[t] < self.ext:
             self.ext, self.ext_bar = l[t], t
-        up = [e for e in events if e[0] == 1]
-        if up:
+        # the high to break: the highest high between the sweep and the lowest point after it, or the
+        # last swing high if that is higher (a small swing inside the drop does not count)
+        top = self.sweep_bar + int(np.argmax(h[self.sweep_bar:self.ext_bar + 1]))
+        level, level_bar = h[top], top
+        sh = self.sw.last_high
+        if sh is not None and sh.price > level:
+            level, level_bar = sh.price, sh.idx
+        if t > self.ext_bar and c[t] > level:
             self.state = "IDLE"
             a = self.a[t]
             ob_bar, ob_top, ob_bot = find_order_block(o, h, l, c, self.ext_bar)
@@ -163,9 +172,9 @@ class SweepMachine:
             if not np.isfinite(a) or a <= 0 or entry - stop < s.MIN_RISK_ATR * a:
                 return None
             return dict(entry=entry, stop=stop, sweep_bar=self.sweep_bar, swept=self.swept, ob_bar=ob_bar,
-                        swept_bar=self.swept_bar, ext_bar=self.ext_bar, broken_bar=up[0][2].idx,
-                        broken=up[0][2].price, kind=up[0][1])
-        if t - self.sweep_bar >= s.MAX_BARS_SWEEP_TO_SHIFT:
+                        swept_bar=self.swept_bar, ext_bar=self.ext_bar, broken_bar=level_bar,
+                        broken=level, kind="BOS")
+        if t - self.ext_bar >= s.MAX_BARS_SWEEP_TO_SHIFT:       # 30 candles without a new low or a break
             self.state = "IDLE"
         return None
 
@@ -251,6 +260,15 @@ def _sniper(df, s, bias, z, base):
             return base_row if order > 1 else None      # a bad successive order keeps the one before
         return dict(base_row or {}, entry_f=entry, stop_f=stop, placed_bar=t, ob_bar=ob_bar, order=order)
 
+    def after_loss(row, placed_bar, src):
+        """Stopped out with tries left: wait for a close above the high of the failed try (or the
+        highest high before the next low), then the FVG momentum entry."""
+        if row["outcome"] != "stop" or src["shot"] >= s.SNIPER_MAX_SHOTS:
+            return None
+        j = int(np.searchsorted(closes_t, row["exit_time"].to_datetime64()))
+        return dict(start=j + 1, info=src["info"], expires=src["expires"], shot=src["shot"] + 1,
+                    phase="break", from_bar=placed_bar, ext_bar=-1)
+
     for t in range(n):
         for d in (1, -1):
             O, H, L, C = flipped[d]
@@ -272,9 +290,7 @@ def _sniper(df, s, bias, z, base):
                                shot=q["shot"], filled=pd.Timestamp(times[t]))
                     row = _finish(row, l, h, c, times, base, t, d, t + 1, s.COST)
                     rows.append(row)
-                    if row["outcome"] == "stop" and q["shot"] < s.SNIPER_MAX_SHOTS:   # stopped: another try later
-                        j = int(np.searchsorted(closes_t, row["exit_time"].to_datetime64()))
-                        rearm[d] = dict(start=j + 1, info=q["info"], expires=q["expires"], shot=q["shot"] + 1)
+                    rearm[d] = after_loss(row, q["placed_bar"], q)
                     continue
                 hl = d * q["info"]["hl"]
                 if C[t] < q["stop_f"] or C[t] < hl or t >= q["expires"]:   # range or higher low broken, or too late
@@ -290,21 +306,47 @@ def _sniper(df, s, bias, z, base):
                             pending[d] = new
                 continue
             r_ = rearm[d]
-            if r_ is not None and t >= r_["start"]:     # ---- after a stop-out: a new M1 break up?
+            if r_ is not None and t >= r_["start"]:     # ---- after a loss: wait for a real break, then FVG momentum
                 if t >= r_["expires"] or C[t] < d * r_["info"]["hl"]:
                     rearm[d] = None
-                else:
-                    for e in m.events:
-                        if e[0] == 1 and b1[t] == d and b4[t] == d:
-                            k = e[2].idx
-                            leg = k + 1 + int(np.argmin(L[k + 1:t + 1]))
-                            q = place(d, t, find_order_block(O, H, L, C, leg)[0], L[leg], 1, None)
-                            if q is not None:
-                                q.update(info=r_["info"], expires=r_["expires"], shot=r_["shot"])
-                                pending[d], rearm[d] = q, None
-                            break
-                    if pending[d] is not None:
+                    continue
+                if r_["phase"] == "break":
+                    if r_["ext_bar"] < 0 or L[t] < L[r_["ext_bar"]]:
+                        r_["ext_bar"] = t
+                    level = H[r_["from_bar"]:r_["ext_bar"] + 1].max()   # the high of the failed try, or higher
+                    if t > r_["ext_bar"] and C[t] > level:
+                        r_.update(phase="pullback", fvg=None, bear=-1, level=level)
+                        for k in range(r_["ext_bar"] + 2, t + 1):       # FVGs left by the break
+                            if L[k] > H[k - 2]:
+                                r_["fvg"] = (L[k], H[k - 2], k)
+                    continue
+                if L[t] < L[r_["ext_bar"]]:                # a new low: the break failed, start again
+                    r_.update(phase="break", ext_bar=t)
+                    continue
+                if t >= 2 and L[t] > H[t - 2]:
+                    r_["fvg"] = (L[t], H[t - 2], t)
+                f_ = r_["fvg"]
+                if f_ is not None and t > f_[2] and C[t] < O[t] and L[t] <= f_[0]:
+                    r_["bear"] = t                          # a bearish candle fills into the FVG
+                elif r_["bear"] >= 0 and t > r_["bear"] and C[t] > H[r_["bear"]]:
+                    jb = r_["bear"]                         # momentum: a close above that candle -> enter now
+                    entry_f, stop_f = C[t], L[jb] - s.STOP_BUFFER_ATR * a[t]
+                    r_["bear"] = -1
+                    if not (b1[t] == d and b4[t] == d and entry_f - stop_f >= s.MIN_RISK_ATR * a[t]):
                         continue
+                    entry, stop = d * entry_f, d * stop_f
+                    when = pd.Timestamp(closes_t[t])
+                    tg = _target(z, when, entry, stop, d, s.SNIPER_MIN_R)
+                    risk = abs(entry - stop)
+                    row = dict(r_["info"], type="sniper", direction=d, placed=when, entry=entry, stop=stop,
+                               target=tg["level"], target_tf=tg["tf"], target_type=tg["type"], risk=risk,
+                               rr=abs(tg["level"] - entry) / risk, m1_ob_time=pd.Timestamp(times[jb]),
+                               order="FVG momentum", shot=r_["shot"], filled=when,
+                               broken=d * r_["level"])
+                    row = _finish(row, l, h, c, times, base, t + 1, d, None, s.COST)
+                    rows.append(row)
+                    rearm[d] = after_loss(row, t, r_)
+                continue
             if cand is None:
                 continue
             t1 = pois_by_dir[d][p][1]
