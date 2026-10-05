@@ -9,14 +9,15 @@ Bias first (bias.py): D1 and H4 both up for longs, both down for shorts.
      timeframe, sitting at the most recent higher low (poi.py). A newer one replaces it.
    * price comes back into that order block (its first touch)
    * then on M1: a range forms there; its low is swept (a candle trades below the last M1 swing
-     low) and within 30 candles a candle closes above the last M1 swing high (smc_dickson's rules)
+     low), then a candle closes above the real M1 swing high: the highest high between the sweep and
+     the lowest point after it, or the last swing high if higher (no new low for 30 candles = reset)
    * the order: a buy limit at the OPEN of the order block of that move, stop just under the low
      of the range (the sweep's low)
    * not filled, and price builds the next range (e.g. a pause up)? Each new M1 break up inside
      it moves the order to the open of the new order block, stop under that range's low
    * cancelled on a close below the stop's range or below the higher low, or 1 day after the touch
-   * stopped out? Another try (up to 3 per POI) once an M1 candle closes above the previous M1
-     swing high again: the same order rules, from that break
+   * stopped out? Another try (up to 3 per POI) once an M1 candle closes above the real swing high
+     again (the failed try's high, or the highest high before the next low): the same order rules
 2. MOMENTUM ORDER (larger stop)
    * a pause up range (range_types.py) on M5
    * buy at the close of the M5 candle that breaks structure up (closes above the last M5
@@ -125,10 +126,11 @@ def walk(lo, hi, start, d, stop, target, target_from=None):
 
 
 class SweepMachine:
-    """smc_dickson's setup rules (smcml/setups.py, SetupMachine), up version, on one chart:
+    """The liquidity sweep (from smc_dickson's setup rules), up version, on one chart:
         IDLE  --(a candle trades below the last swing low: liquidity sweep)--> SWEPT
-        SWEPT --(a close above the last swing high within MAX_BARS_SWEEP_TO_SHIFT)--> an order
-        SWEPT --(too long)--> IDLE
+        SWEPT --(a candle CLOSES above the real swing high: the highest high between the sweep and
+                 the lowest point after it, or the last swing high if higher)--> an order
+        SWEPT --(30 candles without a new low or a break)--> IDLE
     It only acts while armed; disarmed, it goes back to IDLE (swings keep updating)."""
 
     def __init__(self, o, h, l, c, a, s):
@@ -153,8 +155,14 @@ class SweepMachine:
             return None
         if l[t] < self.ext:
             self.ext, self.ext_bar = l[t], t
-        up = [e for e in events if e[0] == 1]
-        if up:
+        # the high to break: the highest high between the sweep and the lowest point after it, or the
+        # last swing high if that is higher (a small swing inside the drop does not count)
+        top = self.sweep_bar + int(np.argmax(h[self.sweep_bar:self.ext_bar + 1]))
+        level, level_bar = h[top], top
+        sh = self.sw.last_high
+        if sh is not None and sh.price > level:
+            level, level_bar = sh.price, sh.idx
+        if t > self.ext_bar and c[t] > level:
             self.state = "IDLE"
             a = self.a[t]
             ob_bar, ob_top, ob_bot = find_order_block(o, h, l, c, self.ext_bar)
@@ -163,9 +171,9 @@ class SweepMachine:
             if not np.isfinite(a) or a <= 0 or entry - stop < s.MIN_RISK_ATR * a:
                 return None
             return dict(entry=entry, stop=stop, sweep_bar=self.sweep_bar, swept=self.swept, ob_bar=ob_bar,
-                        swept_bar=self.swept_bar, ext_bar=self.ext_bar, broken_bar=up[0][2].idx,
-                        broken=up[0][2].price, kind=up[0][1])
-        if t - self.sweep_bar >= s.MAX_BARS_SWEEP_TO_SHIFT:
+                        swept_bar=self.swept_bar, ext_bar=self.ext_bar, broken_bar=level_bar,
+                        broken=level, kind="BOS")
+        if t - self.ext_bar >= s.MAX_BARS_SWEEP_TO_SHIFT:       # 30 candles without a new low or a break
             self.state = "IDLE"
         return None
 
@@ -274,7 +282,8 @@ def _sniper(df, s, bias, z, base):
                     rows.append(row)
                     if row["outcome"] == "stop" and q["shot"] < s.SNIPER_MAX_SHOTS:   # stopped: another try later
                         j = int(np.searchsorted(closes_t, row["exit_time"].to_datetime64()))
-                        rearm[d] = dict(start=j + 1, info=q["info"], expires=q["expires"], shot=q["shot"] + 1)
+                        rearm[d] = dict(start=j + 1, info=q["info"], expires=q["expires"], shot=q["shot"] + 1,
+                                        from_bar=q["placed_bar"], ext_bar=-1)
                     continue
                 hl = d * q["info"]["hl"]
                 if C[t] < q["stop_f"] or C[t] < hl or t >= q["expires"]:   # range or higher low broken, or too late
@@ -294,15 +303,15 @@ def _sniper(df, s, bias, z, base):
                 if t >= r_["expires"] or C[t] < d * r_["info"]["hl"]:
                     rearm[d] = None
                 else:
-                    for e in m.events:
-                        if e[0] == 1 and b1[t] == d and b4[t] == d:
-                            k = e[2].idx
-                            leg = k + 1 + int(np.argmin(L[k + 1:t + 1]))
-                            q = place(d, t, find_order_block(O, H, L, C, leg)[0], L[leg], 1, None)
-                            if q is not None:
-                                q.update(info=r_["info"], expires=r_["expires"], shot=r_["shot"])
-                                pending[d], rearm[d] = q, None
-                            break
+                    if r_["ext_bar"] < 0 or L[t] < L[r_["ext_bar"]]:
+                        r_["ext_bar"] = t                       # the lowest point since the stop-out
+                    level = H[r_["from_bar"]:r_["ext_bar"] + 1].max()   # the failed try's high, or higher
+                    if t > r_["ext_bar"] and C[t] > level and b1[t] == d and b4[t] == d:
+                        leg = r_["ext_bar"]
+                        q = place(d, t, find_order_block(O, H, L, C, leg)[0], L[leg], 1, None)
+                        if q is not None:
+                            q.update(info=r_["info"], expires=r_["expires"], shot=r_["shot"])
+                            pending[d], rearm[d] = q, None
                     if pending[d] is not None:
                         continue
             if cand is None:
