@@ -9,7 +9,7 @@ Sniper page:   left = the M15 / M30 chart: the staircase range, the order block 
                the sweep, the break, the order at the open of the order block (moved to the next
                range's order block if not filled), stop under the range, take-profit 12R or more.
 Momentum page: the M5 chart: the pause range, the M5 break of structure, the entry, the stop
-               under the range, the 5R take-profit.
+               under the range, the 10R take-profit (limit halfway back).
 """
 import argparse
 import os
@@ -182,7 +182,7 @@ def momentum_page(pdf, df, r, n, scale, fmt, label):
     fig.text(0.06, 0.95, f"Momentum trade {n} ({'long' if d == 1 else 'short'}): {pd.Timestamp(r.placed):%d %b %Y %H:%M}{label}",
              fontsize=15, fontweight="bold")
     fig.text(0.06, 0.915, f"D1 and H4 bias {word}.  M5 chart: the pause range, the 5 min break of structure, "
-                          f"entry, stop under the range, 5R take-profit.", fontsize=9.5, color=INK2)
+                          f"limit halfway back, stop under the range, 10R take-profit.", fontsize=9.5, color=INK2)
     candles(ax, bars, scale)
     on = (st["pause"].iloc[a:b + 1].to_numpy() == 1) & (st["pause_dir"].iloc[a:b + 1].to_numpy() == d)
     x = np.arange(len(bars))
@@ -197,8 +197,9 @@ def momentum_page(pdf, df, r, n, scale, fmt, label):
     outcome = position(ax, bars, r, scale, fmt, base)
     note(ax, f"1. After the impulse, price pauses (orange = the pause range on 5 min).\n"
              f"2. A 5 min candle closes {'above the last swing high' if d == 1 else 'below the last swing low'} "
-             f"(BOS): enter at its close.\n"
-             f"3. Stop beyond the {'lowest' if d == 1 else 'highest'} point of the range; take-profit 5R.  "
+             f"(BOS) at {fmt(r.trigger)}: no trade there.\n"
+             f"3. Limit halfway back to the stop ({fmt(r.entry)}), stop beyond the {'lowest' if d == 1 else 'highest'} "
+             f"point of the range, take-profit 10R.  "
              f"Result: {outcome}.")
     pdf.savefig(fig)
     plt.close(fig)
@@ -218,7 +219,7 @@ def cover(pdf, trades, label, simulated):
              (10, "normal", INK, "limit at the M1 order block, stop beyond the sweep, take-profit = the nearest H1/H4/D1 POI at least 12R away (else 12R)."),
              (0, "", "", ""),
              (12, "bold", INK, "Momentum order (5 minute ranges)"),
-             (10, "normal", INK, "D1 + H4 bias -> pause range on M5 -> enter at the close of the 5 min BOS -> stop beyond the range -> take-profit 5R."),
+             (10, "normal", INK, "D1 + H4 bias -> pause range on M5 -> enter at the close of the 5 min BOS -> stop beyond the range -> take-profit 10R."),
              (0, "", "", ""),
              (12, "bold", INK, "Results"),
              ] + [(9, "normal", INK, line) for line in report(trades).splitlines()]

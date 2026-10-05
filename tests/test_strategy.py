@@ -61,7 +61,8 @@ def test_every_trade_follows_the_rules():
         assert bias["bias_d1"].iat[j] == d and bias["bias_h4"].iat[j] == d
         assert d * (r.entry - r.stop) > 0 and d * (r.target - r.entry) > 0
         if r.type == "momentum":
-            assert np.isclose(r.rr, 5)                              # momentum: 5R
+            assert np.isclose(r.rr, 10)                             # momentum: 10R
+            assert np.isclose(r.entry, (r.trigger + r.stop) / 2)    # a limit halfway back to the stop
         else:
             assert r.rr >= 12 - 1e-9                                # sniper: at least 12R
             far = targets(z, r.placed, r.entry, d)
@@ -85,7 +86,7 @@ def test_every_trade_follows_the_rules():
             assert (d * (closes - r.hl) >= 0).all()                 # no close through the higher low before it
         else:
             m5 = resample(DF, "5min")
-            assert m5["close"].loc[r.placed - pd.Timedelta("5min")] == r.entry      # bought the M5 close
+            assert m5["close"].loc[r.placed - pd.Timedelta("5min")] == r.trigger    # triggered by the M5 close
             k = P.index[P.index + tf <= r.placed - pd.Timedelta("5min")][-1]        # last pause candle before it
             assert P.loc[k, "pause"] == 1 and P.loc[k, "pause_dir"] == d
             assert (r.stop < r.pause_bottom) if d == 1 else (r.stop > r.pause_top)  # beyond the whole range

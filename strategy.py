@@ -20,11 +20,13 @@ Bias first (bias.py): D1 and H4 both up for longs, both down for shorts.
      again (the failed try's high, or the highest high before the next low): the same order rules
 2. MOMENTUM ORDER (larger stop)
    * a pause up range (range_types.py) on M5
-   * buy at the close of the M5 candle that breaks structure up (closes above the last M5
-     swing high) while the pause is on. Stop just under the lowest point of the range.
+   * the trigger: an M5 candle closes above the last M5 swing high while the pause is on.
+     No trade at that close: a buy limit halfway between it and the stop, stop just under the
+     lowest point of the range, take-profit 10R. Cancelled after 1 day, or if the target trades
+     before the limit fills.
    * one per pause
 Take profit: sniper = the nearest live H1 / H4 / D1 point of interest at least 12R away
-(else 12R); momentum = 5R. Then stop or target, whichever comes first. If one M1
+(else 12R); momentum = 10R. Then stop or target, whichever comes first. If one M1
 candle reaches both, the stop counts.
 
     from strategy import backtest, report
@@ -55,7 +57,9 @@ class Settings:
     REQUIRE_STAIRCASE: bool = False         # True = only order blocks inside a staircase range
     PAUSE_TFS: tuple = ("5min",)            # where the momentum order looks for a pause (5 min ranges)
     SNIPER_MIN_R: float = 12.0              # sniper take-profit: at least 12R
-    MOMENTUM_R: float = 5.0                 # momentum take-profit: 5R
+    MOMENTUM_R: float = 10.0                # momentum take-profit: 10R
+    MOMENTUM_LIMIT: float = 0.5             # momentum: buy limit this far from the trigger close toward the stop
+    MOMENTUM_WAIT: str = "1D"               # momentum: limit cancelled after this long (or once the target trades)
     SWING_N: int = 5                        # M1 / M5 swing = 5 candles each side (smc_dickson SWING_N)
     ATR_N: int = 14
     MAX_BARS_SWEEP_TO_SHIFT: int = 30       # smc_dickson: the break must come within 30 candles of the sweep
@@ -374,17 +378,29 @@ def _momentum(df, s, bias, z, base):
                 else:
                     high = max(P["pause_top"].iat[k], h5[after:m + 1].max(initial=-np.inf))
                     stop = high + s.STOP_BUFFER_ATR * a5[m]
-                entry = c5[m]
+                trigger = c5[m]                                 # the 5 min BOS close: no trade here ...
+                entry = trigger - s.MOMENTUM_LIMIT * (trigger - stop)   # ... a limit halfway back to the stop
                 risk = d * (entry - stop)
                 if not risk > 0:
                     continue
                 when = pd.Timestamp(m5_close[m])
-                tg = pd.Series(dict(level=entry + d * s.MOMENTUM_R * risk, tf="", type=f"{s.MOMENTUM_R:g}R"))
-                row = dict(type="momentum", direction=d, placed=when, entry=entry, stop=stop, target=tg["level"],
-                           target_tf=tg["tf"], target_type=tg["type"], risk=risk, rr=abs(tg["level"] - entry) / risk,
-                           tf=tf, pause_top=P["pause_top"].iat[k], pause_bottom=P["pause_bottom"].iat[k],
-                           pause_start=P.index[since[k]], filled=when)
-                rows.append(_finish(row, l, h, c, times, base, j + 1, d, None, s.COST))
+                target = entry + d * s.MOMENTUM_R * risk
+                last = min(j + int(pd.Timedelta(s.MOMENTUM_WAIT) / base), len(df) - 1)
+                hit_e = (l[j + 1:last + 1] <= entry) if d == 1 else (h[j + 1:last + 1] >= entry)
+                hit_t = (h[j + 1:last + 1] >= target) if d == 1 else (l[j + 1:last + 1] <= target)
+                fe = int(np.argmax(hit_e)) if hit_e.any() else None
+                ft = int(np.argmax(hit_t)) if hit_t.any() else None
+                row = dict(type="momentum", direction=d, placed=when, entry=entry, stop=stop, target=target,
+                           target_tf="", target_type=f"{s.MOMENTUM_R:g}R", risk=risk, rr=s.MOMENTUM_R,
+                           trigger=trigger, tf=tf, pause_top=P["pause_top"].iat[k],
+                           pause_bottom=P["pause_bottom"].iat[k], pause_start=P.index[since[k]])
+                if fe is None or (ft is not None and ft < fe):  # never came back, or ran to the target first
+                    row.update(filled=pd.NaT, exit_time=pd.NaT, exit=np.nan, outcome="not filled", R=0.0)
+                    rows.append(row)
+                    continue
+                f = j + 1 + fe
+                row["filled"] = pd.Timestamp(times[f])
+                rows.append(_finish(row, l, h, c, times, base, f, d, f + 1, s.COST))
     return rows
 
 
