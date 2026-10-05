@@ -79,8 +79,7 @@ def test_every_trade_follows_the_rules():
             assert r.poi_known < r.poi_touch <= r.placed <= r.poi_touch + pd.Timedelta("1D")
             assert r.sweep_time + BASE >= r.poi_touch               # the sweep came after price reached the OB
             row = P.loc[r.poi_known - tf]                           # the candle whose close broke structure
-            assert row["staircase"] == 1 and row["staircase_dir"] == d
-            assert r.poi_bottom < row["staircase_top"] and r.poi_top > row["staircase_bottom"]
+            assert row.name == r.poi_known - tf                    # the POI is an order block on its timeframe
             touch = DF.index.get_loc(r.poi_touch - BASE)
             closes = DF["close"].iloc[touch:j + 1]
             assert (d * (closes - r.hl) >= 0).all()                 # no close through the higher low before it

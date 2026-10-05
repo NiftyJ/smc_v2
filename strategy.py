@@ -4,9 +4,9 @@ THE STRATEGY: two intraday trades. Longs are described here; shorts are the mirr
 Bias first (bias.py): D1 and H4 both up for longs, both down for shorts.
 
 1. SNIPER ENTRY
-   * a staircase up range (range_types.py) on M15 or M30
-   * inside it, the bullish order block made by the most recent break of structure on that
-     timeframe, sitting at the most recent higher low (poi.py). A newer one replaces it.
+   * the POI: the bullish order block made by the most recent break of structure on M15, M30
+     or H1, at the most recent higher low (poi.py). A newer one replaces it. (REQUIRE_STAIRCASE
+     = True: only order blocks inside a staircase up range.)
    * price comes back into that order block (its first touch)
    * then on M1: a range forms there; its low is swept (a candle trades below the last M1 swing
      low), then a candle closes above the real M1 swing high: the highest high between the sweep and
@@ -51,7 +51,8 @@ from poi import pois, targets, _first_at_or_below  # noqa: E402
 
 @dataclass
 class Settings:
-    STAIR_TFS: tuple = ("15min", "30min")   # where the sniper looks for a staircase
+    STAIR_TFS: tuple = ("15min", "30min", "1h")   # the sniper's POI: an order block on these timeframes
+    REQUIRE_STAIRCASE: bool = False         # True = only order blocks inside a staircase range
     PAUSE_TFS: tuple = ("5min",)            # where the momentum order looks for a pause (5 min ranges)
     SNIPER_MIN_R: float = 12.0              # sniper take-profit: at least 12R
     MOMENTUM_R: float = 5.0                 # momentum take-profit: 5R
@@ -219,7 +220,8 @@ def _sniper(df, s, bias, z, base):
             kb = np.minimum(kb, len(st) - 1)
             top, bot = st["staircase_top"].to_numpy()[kb], st["staircase_bottom"].to_numpy()[kb]
             inside = (obs["bottom"].to_numpy() < top) & (obs["top"].to_numpy() > bot)   # the OB sits in the range
-            ok = kb_ok & (st["staircase"].to_numpy()[kb] == 1) & (st["staircase_dir"].to_numpy()[kb] == d) & inside
+            ok = kb_ok & ((st["staircase"].to_numpy()[kb] == 1) & (st["staircase_dir"].to_numpy()[kb] == d) & inside
+                          if s.REQUIRE_STAIRCASE else True)
             obs = obs[ok].sort_values("known").reset_index(drop=True)
             if obs.empty:
                 continue
@@ -247,6 +249,7 @@ def _sniper(df, s, bias, z, base):
     machines = {d: SweepMachine(*flipped[d], a, s) for d in (1, -1)}
     b1, b4 = bias["bias_d1"].to_numpy(), bias["bias_h4"].to_numpy()
     pending = {1: None, -1: None}                       # the order waiting to be filled, per direction
+    last_owner = {1: -1, -1: -1}
     rearm = {1: None, -1: None}                         # after a stop-out: waiting for a new M1 break up
     rows = []
 
@@ -264,6 +267,8 @@ def _sniper(df, s, bias, z, base):
             O, H, L, C = flipped[d]
             p = owner[d][t]
             m = machines[d]
+            if p != last_owner[d]:                      # a different POI: its sweep must come after its touch
+                m.state, last_owner[d] = "IDLE", p
             q = pending[d]
             cand = m.step(t, p >= 0 and q is None)
             if q is not None:                           # ---- an order is waiting
