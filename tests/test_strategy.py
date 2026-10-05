@@ -95,13 +95,6 @@ def test_every_trade_follows_the_rules():
     for _, g in sn.groupby("poi_touch"):                            # per POI: at most 3 tries, each after a stop
         assert len(g) <= 3 and list(g["shot"]) == list(range(1, len(g) + 1))
         assert (g["outcome"].iloc[:-1] == "stop").all()
-        assert (g["order"].iloc[1:] == "FVG momentum").all() and g["order"].iloc[0] != "FVG momentum"
-    for r in sn[sn["order"] == "FVG momentum"].itertuples():        # momentum: the close of the trigger candle
-        k = DF.index.get_loc(r.placed - BASE)
-        jb = DF.index.get_loc(r.m1_ob_time)                         # the bearish candle that filled the FVG
-        d = r.direction
-        assert DF["close"].iat[k] == r.entry and d * (DF["close"].iat[k] - (DF["high"] if d == 1 else DF["low"]).iat[jb]) > 0
-        assert d * (DF["close"].iat[jb] - DF["open"].iat[jb]) < 0 and d * (r.stop - (DF["low"] if d == 1 else DF["high"]).iat[jb]) < 0
         assert (g["placed"].iloc[1:].to_numpy() > g["exit_time"].iloc[:-1].to_numpy()).all()
     mom = TR[TR["type"] == "momentum"]
     assert mom.groupby(["tf", "pause_start", "direction"]).size().max() == 1   # one per pause

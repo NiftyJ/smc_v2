@@ -136,7 +136,7 @@ def sniper_page(pdf, df, r, n, scale, fmt, label):
     # ---- right: M1
     t_touch, t_end = df.index.get_loc(r.poi_touch - base), None
     j_exit = df.index.get_loc(r.exit_time - base) if pd.notna(r.exit_time) else df.index.get_loc(r.placed - base) + 40
-    a1 = max(t_touch - 25, 0) if r.order != "FVG momentum" else max(df.index.get_loc(r.placed - base) - 120, 0)
+    a1 = max(t_touch - 25, 0)
     b1 = min(max(j_exit + 10, df.index.get_loc(r.placed - base) + 45), len(df) - 1, a1 + 420)
     m1 = df.iloc[a1:b1 + 1]
     candles(ax2, m1, scale)
@@ -150,28 +150,19 @@ def sniper_page(pdf, df, r, n, scale, fmt, label):
     ax2.annotate("sweep", (xs, (m1["low"] if d == 1 else m1["high"]).iloc[xs] * scale), xytext=(0, -13 * d),
                  textcoords="offset points", ha="center", fontsize=7, fontweight="bold",
                  arrowprops=dict(arrowstyle="-", color=INK2))
-    if r.order != "FVG momentum":
-        ax2.plot([max(xs - 5, 0), xb], [r.broken * scale] * 2, color=BEAR if d == 1 else BULL, lw=1.2, zorder=5)
-    ax2.annotate("break" if r.order != "FVG momentum" else "momentum entry", (xb, (m1["high"] if d == 1 else m1["low"]).iloc[xb] * scale), xytext=(0, 12 * d),
+    ax2.plot([max(xs - 5, 0), xb], [r.broken * scale] * 2, color=BEAR if d == 1 else BULL, lw=1.2, zorder=5)
+    ax2.annotate("break", (xb, (m1["high"] if d == 1 else m1["low"]).iloc[xb] * scale), xytext=(0, 12 * d),
                  textcoords="offset points", ha="center", fontsize=7, fontweight="bold",
                  arrowprops=dict(arrowstyle="-", color=INK2))
     ob = m1.iloc[xo]
     ax2.add_patch(Rectangle((xo - 0.45, ob["low"] * scale), 0.9, (ob["high"] - ob["low"]) * scale, fill=False,
                             ec=INK, lw=1.3, zorder=7))
     outcome = position(ax2, m1, r, scale, fmt, base)
-    if r.order == "FVG momentum":
-        ax2.axhline(r.broken * scale, color=BEAR if d == 1 else BULL, lw=0.9, ls=":", zorder=4)
-        note(ax2, f"After a loss at this POI (try {int(r.shot)}):\n"
-                  f"4. Wait for a close {'above' if d == 1 else 'below'} the high of the failed try (dotted line).\n"
-                  f"5. A bearish candle pulls back into the FVG the break left (black box);\n"
-                  f"   the next candle that closes above it is the entry (momentum), stop under it.\n"
-                  f"   Take-profit at least 12R.  Result: {outcome}.")
-    else:
-        note(ax2, f"4. M1: price trades {'below the last swing low' if d == 1 else 'above the last swing high'} (sweep),\n"
-                  f"   then closes {'above the real swing high' if d == 1 else 'below the real swing low'} (break).\n"
-                  f"5. Order ({r.order}): limit at the OPEN of the M1 order block (black box),\n"
-                  f"   stop under that range's low; if not filled, the next range's order block replaces it.\n"
-                  f"   Take-profit at least 12R.  Result: {outcome}.")
+    note(ax2, f"4. M1: price trades {'below the last swing low' if d == 1 else 'above the last swing high'} (sweep),\n"
+              f"   then closes {'above the last swing high' if d == 1 else 'below the last swing low'} (break).\n"
+              f"5. Order ({r.order}): limit at the OPEN of the M1 order block (black box),\n"
+              f"   stop under that range's low; if not filled, the next range's order block replaces it.\n"
+              f"   Take-profit at least 12R.  Result: {outcome}.")
     pdf.savefig(fig)
     plt.close(fig)
 
