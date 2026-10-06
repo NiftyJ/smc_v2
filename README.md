@@ -24,6 +24,12 @@ New version of the SMC bot, built one indicator at a time. The strategy comes la
   Take-profit: sniper = the nearest H1 / H4 / D1 POI at least 12R away (else 12R); momentum = 5R. `python strategy.py --data M1.csv` lists
   every trade and prints the results.
 - `show_trades.py`: every trade drawn start to finish (POI, M1 sweep, entry, stop, take-profit), as a PDF.
+- `live.py`: runs the strategy on MetaTrader 5. Every minute it re-runs strategy.py on the latest
+  M1 candles and places / moves / cancels the limit orders (with stop and take-profit) to match,
+  so live = backtest. Watch-only unless `--trade`; refuses a real account without `--real`;
+  `--risk` % per trade; `--utc-offset` = your broker's server-time offset.
+  `python live.py --symbol XAUUSD` (watch) / `python live.py --symbol XAUUSD --trade --risk 0.5` (demo).
+- `get_dukascopy.py`: free M1 history (`python get_dukascopy.py XAUUSD 2026-06-01 2026-10-03`).
 - `show_indicators.py`: every indicator drawn on your chart, as a PDF to check by eye.
 - `smcml/`: the helpers it uses (ATR, swings, FVGs, resampling, the simulator), copied unchanged
 

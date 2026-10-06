@@ -207,7 +207,7 @@ def _finish(row, lo, hi, closes, times, base, start, d, target_from, cost):
     return row
 
 
-def _sniper(df, s, bias, z, base):
+def _sniper(df, s, bias, z, base, live=None):
     o, h, l, c = (df[k].to_numpy(float) for k in ("open", "high", "low", "close"))
     n, times = len(df), df.index.to_numpy()
     closes_t = times + base.to_timedelta64()
@@ -337,10 +337,19 @@ def _sniper(df, s, bias, z, base):
             if q is not None:
                 q.update(info=info, expires=min(pois_by_dir[d][p][0] + window, n), shot=1)
                 pending[d] = q
+    if live is not None:                                # orders that should be resting after the last candle
+        for d, q in pending.items():
+            if q is not None:
+                entry, stop = d * q["entry_f"], d * q["stop_f"]
+                tg = _target(z, pd.Timestamp(closes_t[-1]), entry, stop, d, s.SNIPER_MIN_R)
+                live.append(dict(type="sniper", direction=d, placed=pd.Timestamp(closes_t[q["placed_bar"]]),
+                                 entry=entry, stop=stop, target=tg["level"], shot=q["shot"],
+                                 poi_touch=q["info"]["poi_touch"],
+                                 order="first range" if q["order"] == 1 else f"next range ({q['order']})"))
     return rows
 
 
-def _momentum(df, s, bias, z, base):
+def _momentum(df, s, bias, z, base, live=None):
     m5 = resample(df, "5min")
     o5, h5, l5, c5 = (m5[k].to_numpy(float) for k in ("open", "high", "low", "close"))
     a5 = atr(h5, l5, c5, s.ATR_N)
@@ -394,6 +403,10 @@ def _momentum(df, s, bias, z, base):
                            target_tf="", target_type=f"{s.MOMENTUM_R:g}R", risk=risk, rr=s.MOMENTUM_R,
                            trigger=trigger, tf=tf, pause_top=P["pause_top"].iat[k],
                            pause_bottom=P["pause_bottom"].iat[k], pause_start=P.index[since[k]])
+                if live is not None and fe is None and ft is None and j + int(pd.Timedelta(s.MOMENTUM_WAIT) / base) > len(df) - 1:
+                    live.append(dict(type="momentum", direction=d, placed=when, entry=entry, stop=stop,
+                                     target=target, tf=tf))     # still waiting for its fill
+                    continue
                 if fe is None or (ft is not None and ft < fe):  # never came back, or ran to the target first
                     row.update(filled=pd.NaT, exit_time=pd.NaT, exit=np.nan, outcome="not filled", R=0.0)
                     rows.append(row)
@@ -404,19 +417,21 @@ def _momentum(df, s, bias, z, base):
     return rows
 
 
-def backtest(df, settings=None):
-    """Every trade both rules would have taken on df (M1 bars), one row each."""
+def backtest(df, settings=None, live=None):
+    """Every trade both rules would have taken on df (M1 bars), one row each.
+    live: a list; if given, the limit orders that should be resting after the last candle of df
+    (not yet filled or cancelled) are added to it. live.py places exactly those."""
     s = settings or Settings()
     base = bar_length(df.index)
     bias = htf_bias(df)
     z = pois(df)                                      # H1 / H4 / D1: the targets
     rows = []
     if base <= pd.Timedelta("1min"):
-        rows += _sniper(df, s, bias, z, base)
+        rows += _sniper(df, s, bias, z, base, live)
     else:
         print(f"note: the sniper entry needs M1 bars (these are {base}); only momentum orders are tested")
     if base <= pd.Timedelta("5min"):
-        rows += _momentum(df, s, bias, z, base)
+        rows += _momentum(df, s, bias, z, base, live)
     trades = pd.DataFrame(rows)
     if trades.empty:
         return trades
