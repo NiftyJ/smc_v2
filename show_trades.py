@@ -3,9 +3,10 @@ Every trade the strategy takes, drawn from start to finish, as a PDF.
 
     python show_trades.py --data "data/XAUUSD_M1.csv" --scale 0.01
     python show_trades.py --simulated            (no M1 data yet: a simulated M1 market)
+    python show_trades.py --data "data/XAUUSD_M1.csv" --losers      (only the trades that hit the stop)
 
-Sniper page:   left = the M15 / M30 chart: the staircase range, the order block (the POI) at the
-               higher low, where price came back into it.  Right = the M1 chart from that touch:
+Sniper page:   left = the M15 / M30 / H1 chart: the order block (the POI) at the higher low (a
+               staircase range shaded green when there is one), where price came back into it.  Right = the M1 chart from that touch:
                the sweep, the break, the order at the open of the order block (moved to the next
                range's order block if not filled), stop under the range, take-profit 12R or more.
 Momentum page: the M5 chart: the pause range, the M5 break of structure, the entry, the stop
@@ -26,7 +27,7 @@ import pandas as pd  # noqa: E402
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from smcml.data import load_mt5_csv, simulate  # noqa: E402
 from smcml.bias import resample  # noqa: E402
-from strategy import backtest, shapes, report  # noqa: E402
+from strategy import backtest, shapes, report, Settings, TF_KEY  # noqa: E402
 
 BULL, BEAR, STAIR, PAUSE = "#2a78d6", "#eb6834", "#1baf7a", "#eda100"
 INK, INK2, MUTED, GRID, SURFACE = "#0b0b0b", "#52514e", "#8a8984", "#e4e3df", "#fcfcfb"
@@ -34,6 +35,7 @@ plt.rcParams.update({"font.size": 8.5, "text.color": INK, "axes.edgecolor": GRID
                      "ytick.color": INK2, "figure.facecolor": SURFACE, "axes.facecolor": SURFACE,
                      "savefig.facecolor": SURFACE, "text.parse_math": False})
 PAGE = (11.69, 8.27)
+BIAS = " / ".join(k.upper() for k in ["d1", "h4"] + [TF_KEY[tf] for tf in Settings.MID_TFS])
 
 
 def candles(ax, bars, scale):
@@ -103,7 +105,7 @@ def sniper_page(pdf, df, r, n, scale, fmt, label):
     fig.text(0.06, 0.95, f"Sniper trade {n} ({'long' if d == 1 else 'short'}, try {int(r.shot)} at this POI): "
                          f"{pd.Timestamp(r.placed):%d %b %Y %H:%M}{label}",
              fontsize=15, fontweight="bold")
-    fig.text(0.06, 0.915, f"D1 and H4 bias {word}.  Left: the {tf.replace('min', ' min')} POI.  Right: the M1 sweep, "
+    fig.text(0.06, 0.915, f"{BIAS} bias all {word}.  Left: the {tf.replace('min', ' min')} POI.  Right: the M1 sweep, "
                           f"entry, stop and take-profit.", fontsize=9.5, color=INK2)
     # ---- left: the POI on M15 / M30
     htf = resample(df, tf)
@@ -130,8 +132,8 @@ def sniper_page(pdf, df, r, n, scale, fmt, label):
                  arrowprops=dict(arrowstyle="->", color=INK))
     lo, hi = bars["low"].min() * scale, bars["high"].max() * scale
     ax1.set_ylim(lo - (hi - lo) * 0.05, hi + (hi - lo) * 0.35)
-    note(ax1, f"1. Staircase {word} (green) on {tf.replace('min', ' min')}.\n"
-              f"2. A BOS makes the order block (POI) at\n   the most recent {'higher low' if d == 1 else 'lower high'}.\n"
+    note(ax1, f"1. {BIAS} bias all {word}\n   (green = staircase {word}, if any).\n"
+              f"2. A BOS on {tf.replace('min', ' min')} makes the order block (POI)\n   at the most recent {'higher low' if d == 1 else 'lower high'}.\n"
               f"3. Price comes back into the POI:\n   switch to the 1 minute chart.")
     # ---- right: M1
     t_touch, t_end = df.index.get_loc(r.poi_touch - base), None
@@ -159,7 +161,7 @@ def sniper_page(pdf, df, r, n, scale, fmt, label):
                             ec=INK, lw=1.3, zorder=7))
     outcome = position(ax2, m1, r, scale, fmt, base)
     note(ax2, f"4. M1: price trades {'below the last swing low' if d == 1 else 'above the last swing high'} (sweep),\n"
-              f"   then closes {'above the last swing high' if d == 1 else 'below the last swing low'} (break).\n"
+              f"   then closes {'above the real swing high' if d == 1 else 'below the real swing low'} (break).\n"
               f"5. Order ({r.order}): limit at the OPEN of the M1 order block (black box),\n"
               f"   stop under that range's low; if not filled, the next range's order block replaces it.\n"
               f"   Take-profit at least 12R.  Result: {outcome}.")
@@ -181,7 +183,7 @@ def momentum_page(pdf, df, r, n, scale, fmt, label):
     fig.subplots_adjust(left=0.06, right=0.82, top=0.86, bottom=0.09)
     fig.text(0.06, 0.95, f"Momentum trade {n} ({'long' if d == 1 else 'short'}): {pd.Timestamp(r.placed):%d %b %Y %H:%M}{label}",
              fontsize=15, fontweight="bold")
-    fig.text(0.06, 0.915, f"D1 and H4 bias {word}.  M5 chart: the pause range, the 5 min break of structure, "
+    fig.text(0.06, 0.915, f"{BIAS} bias all {word}.  M5 chart: the pause range, the 5 min break of structure, "
                           f"limit halfway back, stop under the range, 10R take-profit.", fontsize=9.5, color=INK2)
     candles(ax, bars, scale)
     on = (st["pause"].iloc[a:b + 1].to_numpy() == 1) & (st["pause_dir"].iloc[a:b + 1].to_numpy() == d)
@@ -205,21 +207,24 @@ def momentum_page(pdf, df, r, n, scale, fmt, label):
     plt.close(fig)
 
 
-def cover(pdf, trades, label, simulated):
+def cover(pdf, trades, label, simulated, losers=False):
     fig = plt.figure(figsize=PAGE)
-    rows = [(20, "bold", INK, "The strategy's trades, start to finish" + label),
+    rows = [(20, "bold", INK, ("The losing trades (stopped out)" if losers else "The strategy's trades, start to finish")
+             + label),
             (0, "", "", "")]
     if simulated:
         rows += [(10.5, "bold", BEAR, "These prices are SIMULATED (a random 1 minute market): real M1 data isn't available here."),
                  (10, "normal", INK, "The pictures show HOW the code takes each trade. The results mean nothing: a random market has no edge."),
                  (0, "", "", "")]
     rows += [(12, "bold", INK, "Sniper (1 minute entries)"),
-             (10, "normal", INK, "D1 + H4 bias -> staircase range on M15 / M30 -> the order block (POI) at the most recent higher low ->"),
-             (10, "normal", INK, "price back into the POI -> on M1: sweep of the last swing low, then a close above the last swing high ->"),
-             (10, "normal", INK, "limit at the M1 order block, stop beyond the sweep, take-profit = the nearest H1/H4/D1 POI at least 12R away (else 12R)."),
+             (10, "normal", INK, f"{BIAS} bias all agree -> an order block (POI) on M15 / M30 / H1 at the most recent higher low ->"),
+             (10, "normal", INK, "price back into the POI -> on M1: sweep of the last swing low, then a close above the real swing high ->"),
+             (10, "normal", INK, "limit at the OPEN of the M1 order block, stop under the range low (next range's order block if not filled),"),
+             (10, "normal", INK, "take-profit = the nearest H1/H4/D1 POI at least 12R away (else 12R). Up to 3 tries per POI after a stop."),
              (0, "", "", ""),
              (12, "bold", INK, "Momentum order (5 minute ranges)"),
-             (10, "normal", INK, "D1 + H4 bias -> pause range on M5 -> enter at the close of the 5 min BOS -> stop beyond the range -> take-profit 10R."),
+             (10, "normal", INK, f"{BIAS} bias all agree -> pause range on M5 -> 5 min BOS -> limit halfway back to the stop ->"),
+             (10, "normal", INK, "stop beyond the range -> take-profit 10R. A waiting order is cancelled if a bias turns against it."),
              (0, "", "", ""),
              (12, "bold", INK, "Results"),
              ] + [(9, "normal", INK, line) for line in report(trades).splitlines()]
@@ -239,6 +244,7 @@ def main():
     p.add_argument("--simulated", action="store_true", help="use a simulated M1 market")
     p.add_argument("--scale", type=float, default=1.0)
     p.add_argument("--momentum", type=int, default=6, help="how many momentum trades to draw")
+    p.add_argument("--losers", action="store_true", help="draw only the trades that hit the stop")
     p.add_argument("--out", default="trades.pdf")
     args = p.parse_args()
     if args.simulated or not args.data:
@@ -249,11 +255,15 @@ def main():
     fmt = (lambda v: f"${v * args.scale:,.2f}") if args.scale != 1 else (lambda v: f"{v:,.2f}")
     trades = backtest(df)
     with PdfPages(args.out) as pdf:
-        cover(pdf, trades, label, simulated)
-        for n, r in enumerate(trades[trades["type"] == "sniper"].itertuples(), 1):
-            sniper_page(pdf, df, r, n, args.scale, fmt, label)
-        for n, r in enumerate(trades[trades["type"] == "momentum"].head(args.momentum).itertuples(), 1):
-            momentum_page(pdf, df, r, n, args.scale, fmt, label)
+        cover(pdf, trades, label, simulated, args.losers)
+        drawn = 0
+        for kind, page in (("sniper", sniper_page), ("momentum", momentum_page)):
+            for n, r in enumerate(trades[trades["type"] == kind].itertuples(), 1):   # n = number among all trades
+                if args.losers and r.outcome != "stop":
+                    continue
+                if kind == "momentum" and (drawn := drawn + 1) > args.momentum:
+                    break
+                page(pdf, df, r, n, args.scale, fmt, label)
     print(f"saved {args.out}")
 
 
