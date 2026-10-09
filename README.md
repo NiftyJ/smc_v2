@@ -16,13 +16,18 @@ New version of the SMC bot, built one indicator at a time. The strategy comes la
   `z = pois(df)`, then `targets(z, when, price, +1)` = take-profit zones above a long, nearest
   first (a used-up one is skipped, so the next one up takes over), and `entries(...)` = zones
   below. Swing points count as targets on H4 / D1 only.
-- `strategy.py`: the two intraday trades (longs below; shorts are the mirror), after D1 + H4 bias:
-  - sniper: staircase up on M15 / M30, the order block at its most recent higher low, price
-    back into it, then smc_dickson's sweep rules on M1 (sweep, break, limit at the new order
-    block, stop under the sweep). Needs M1 data.
-  - momentum order: pause up on M5, buy the M5 break of structure, stop under the range.
-  Take-profit: sniper = the nearest H1 / H4 / D1 POI at least 12R away (else 12R); momentum = 5R. `python strategy.py --data M1.csv` lists
-  every trade and prints the results.
+- `strategy.py`: the two intraday trades (longs below; shorts are the mirror). Only when the D1,
+  H4, H1 and M30 bias all point the same way (`MID_TFS = ("1h", "30min")`; `()` = D1 + H4 only):
+  HTF bearish but H1 / M30 bullish = no trade, and a waiting order is cancelled if any of them
+  turns against it before the fill.
+  - sniper: price comes back into an M15 / M30 / H1 order block, then smc_dickson's sweep rules
+    on M1: sweep, a close above the real swing high, limit at the open of the M1 order block,
+    stop under the range low (moved to the next range's order block while unfilled). After a
+    stop-out, up to 3 tries per POI, each after a new break of the real swing high. Needs M1 data.
+  - momentum order: pause up on M5; at the M5 break of structure, a limit halfway back to the
+    stop, stop under the range.
+  Take-profit: sniper = the nearest H1 / H4 / D1 POI at least 12R away (else 12R); momentum = 10R.
+  `python strategy.py --data M1.csv` lists every trade and prints the results.
 - `show_trades.py`: every trade drawn start to finish (POI, M1 sweep, entry, stop, take-profit), as a PDF.
 - `live.py`: runs the strategy on MetaTrader 5. Every minute it re-runs strategy.py on the latest
   M1 candles and places / moves / cancels the limit orders (with stop and take-profit) to match,

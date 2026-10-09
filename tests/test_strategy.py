@@ -53,12 +53,13 @@ def test_only_closed_candles_are_used():
 
 
 def test_every_trade_follows_the_rules():
-    bias, z = htf_bias(DF), pois(DF)
+    bias, z = htf_bias(DF, timeframes={"d1": "1D", "h4": "4h", "h1": "1h", "m30": "30min"}), pois(DF)
     tables = {}
     for r in TR.itertuples():
         d = r.direction
         j = DF.index.get_loc(r.placed - BASE)                       # the candle closing at the decision
         assert bias["bias_d1"].iat[j] == d and bias["bias_h4"].iat[j] == d
+        assert bias["bias_h1"].iat[j] == d and bias["bias_m30"].iat[j] == d    # the mid timeframes agree too
         assert d * (r.entry - r.stop) > 0 and d * (r.target - r.entry) > 0
         if r.type == "momentum":
             assert np.isclose(r.rr, 10)                             # momentum: 10R

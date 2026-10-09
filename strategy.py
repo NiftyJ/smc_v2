@@ -1,7 +1,9 @@
 """
 THE STRATEGY: two intraday trades. Longs are described here; shorts are the mirror image.
 
-Bias first (bias.py): D1 and H4 both up for longs, both down for shorts.
+Bias first (bias.py): D1 and H4 both up for longs, both down for shorts, and the mid timeframes
+(MID_TFS: H1 and M30) must agree too. HTF bearish but H1 / M30 bullish = no trade, and an order
+still waiting is cancelled if any of them turns against it before the fill.
 
 1. SNIPER ENTRY
    * the POI: the bullish order block made by the most recent break of structure on M15, M30
@@ -55,6 +57,7 @@ from poi import pois, targets, _first_at_or_below  # noqa: E402
 class Settings:
     STAIR_TFS: tuple = ("15min", "30min", "1h")   # the sniper's POI: an order block on these timeframes
     REQUIRE_STAIRCASE: bool = False         # True = only order blocks inside a staircase range
+    MID_TFS: tuple = ("1h", "30min")         # mid timeframes whose bias must agree with D1 / H4 too (() = off)
     PAUSE_TFS: tuple = ("5min",)            # where the momentum order looks for a pause (5 min ranges)
     SNIPER_MIN_R: float = 12.0              # sniper take-profit: at least 12R
     MOMENTUM_R: float = 10.0                # momentum take-profit: 10R
@@ -90,6 +93,16 @@ def shapes(df, tf):
         out[f"{name}_top"] = np.where(is_up, up[1], -dn[2])
         out[f"{name}_bottom"] = np.where(is_up, up[2], -dn[1])
     return out
+
+
+TF_KEY = {"1D": "d1", "4h": "h4", "1h": "h1", "30min": "m30", "15min": "m15", "5min": "m5"}
+
+
+def aligned(bias, s):
+    """Per direction: True on candles where D1, H4 and every mid timeframe in s.MID_TFS all
+    point that way (a mid timeframe against the higher ones = no trade)."""
+    keys = ["d1", "h4"] + [TF_KEY[tf] for tf in s.MID_TFS]
+    return {d: np.logical_and.reduce([bias[f"bias_{k}"].to_numpy() == d for k in keys]) for d in (1, -1)}
 
 
 def last_closed(index, tf, times):
@@ -251,7 +264,7 @@ def _sniper(df, s, bias, z, base, live=None):
         owner[d] = own
     flipped = {d: mirror(o, h, l, c, d) for d in (1, -1)}
     machines = {d: SweepMachine(*flipped[d], a, s) for d in (1, -1)}
-    b1, b4 = bias["bias_d1"].to_numpy(), bias["bias_h4"].to_numpy()
+    ok = aligned(bias, s)
     pending = {1: None, -1: None}                       # the order waiting to be filled, per direction
     last_owner = {1: -1, -1: -1}
     rearm = {1: None, -1: None}                         # after a stop-out: waiting for a new M1 break up
@@ -295,7 +308,8 @@ def _sniper(df, s, bias, z, base, live=None):
                                         from_bar=q["placed_bar"], ext_bar=-1)
                     continue
                 hl = d * q["info"]["hl"]
-                if C[t] < q["stop_f"] or C[t] < hl or t >= q["expires"]:   # range or higher low broken, or too late
+                if C[t] < q["stop_f"] or C[t] < hl or t >= q["expires"] or not ok[d][t]:
+                    # range or higher low broken, too late, or a bias turned against it before the fill
                     pending[d] = None
                     continue
                 for e in m.events:                      # a new break up: the successive order block
@@ -315,7 +329,7 @@ def _sniper(df, s, bias, z, base, live=None):
                     if r_["ext_bar"] < 0 or L[t] < L[r_["ext_bar"]]:
                         r_["ext_bar"] = t                       # the lowest point since the stop-out
                     level = H[r_["from_bar"]:r_["ext_bar"] + 1].max()   # the failed try's high, or higher
-                    if t > r_["ext_bar"] and C[t] > level and b1[t] == d and b4[t] == d:
+                    if t > r_["ext_bar"] and C[t] > level and ok[d][t]:
                         leg = r_["ext_bar"]
                         q = place(d, t, find_order_block(O, H, L, C, leg)[0], L[leg], 1, None)
                         if q is not None:
@@ -328,7 +342,7 @@ def _sniper(df, s, bias, z, base, live=None):
             t1 = pois_by_dir[d][p][1]
             seg = owner[d][t + 1:t1]
             seg[seg == p] = -1                          # one setup per touch
-            if b1[t] != d or b4[t] != d:
+            if not ok[d][t]:                            # D1, H4 and the mid timeframes must all agree
                 continue
             info = dict(pois_by_dir[d][p][2], sweep_time=pd.Timestamp(times[cand["sweep_bar"]]),
                         swept=d * cand["swept"], broken=d * cand["broken"],
@@ -357,7 +371,7 @@ def _momentum(df, s, bias, z, base, live=None):
     times = df.index.to_numpy()
     closes_t = times + base.to_timedelta64()
     l, h, c = (df[k].to_numpy(float) for k in ("low", "high", "close"))
-    b1, b4 = bias["bias_d1"].to_numpy(), bias["bias_h4"].to_numpy()
+    ok = aligned(bias, s)
     tables = {}
     for tf in s.PAUSE_TFS:
         P = shapes(df, tf)
@@ -373,7 +387,7 @@ def _momentum(df, s, bias, z, base, live=None):
             if not any(e[0] == 1 for e in st.update(m, C)):
                 continue
             j = int(np.searchsorted(closes_t, m5_close[m]))   # the base candle closing with this M5 candle
-            if j >= len(df) or closes_t[j] != m5_close[m] or b1[j] != d or b4[j] != d:
+            if j >= len(df) or closes_t[j] != m5_close[m] or not ok[d][j]:
                 continue
             for tf, (P, kpos, since) in tables.items():
                 k = kpos[m]                                    # last pause candle closed before this M5 candle
@@ -397,17 +411,21 @@ def _momentum(df, s, bias, z, base, live=None):
                 last = min(j + int(pd.Timedelta(s.MOMENTUM_WAIT) / base), len(df) - 1)
                 hit_e = (l[j + 1:last + 1] <= entry) if d == 1 else (h[j + 1:last + 1] >= entry)
                 hit_t = (h[j + 1:last + 1] >= target) if d == 1 else (l[j + 1:last + 1] <= target)
+                bad = ~ok[d][j + 1:last + 1]                    # a bias turns against it: cancelled
                 fe = int(np.argmax(hit_e)) if hit_e.any() else None
                 ft = int(np.argmax(hit_t)) if hit_t.any() else None
+                fb = int(np.argmax(bad)) if bad.any() else None
                 row = dict(type="momentum", direction=d, placed=when, entry=entry, stop=stop, target=target,
                            target_tf="", target_type=f"{s.MOMENTUM_R:g}R", risk=risk, rr=s.MOMENTUM_R,
                            trigger=trigger, tf=tf, pause_top=P["pause_top"].iat[k],
                            pause_bottom=P["pause_bottom"].iat[k], pause_start=P.index[since[k]])
-                if live is not None and fe is None and ft is None and j + int(pd.Timedelta(s.MOMENTUM_WAIT) / base) > len(df) - 1:
+                if live is not None and fe is None and ft is None and fb is None and \
+                        j + int(pd.Timedelta(s.MOMENTUM_WAIT) / base) > len(df) - 1:
                     live.append(dict(type="momentum", direction=d, placed=when, entry=entry, stop=stop,
                                      target=target, tf=tf))     # still waiting for its fill
                     continue
-                if fe is None or (ft is not None and ft < fe):  # never came back, or ran to the target first
+                if fe is None or (ft is not None and ft < fe) or (fb is not None and fb < fe):
+                    # never came back, ran to the target first, or a bias turned against it first
                     row.update(filled=pd.NaT, exit_time=pd.NaT, exit=np.nan, outcome="not filled", R=0.0)
                     rows.append(row)
                     continue
@@ -423,7 +441,7 @@ def backtest(df, settings=None, live=None):
     (not yet filled or cancelled) are added to it. live.py places exactly those."""
     s = settings or Settings()
     base = bar_length(df.index)
-    bias = htf_bias(df)
+    bias = htf_bias(df, timeframes={"d1": "1D", "h4": "4h", **{TF_KEY[tf]: tf for tf in s.MID_TFS}})
     z = pois(df)                                      # H1 / H4 / D1: the targets
     rows = []
     if base <= pd.Timedelta("1min"):
