@@ -1,0 +1,591 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SMC Labeller</title>
+<style>
+  :root {
+    --bg: #f7f7f5; --panel: #ffffff; --ink: #1f2328; --muted: #6b7280; --line: #e3e3df;
+    --up: #2a9d8f; --down: #e76f51; --wick: #555; --sel: #c1121f; --future: rgba(0,0,0,0.035);
+    --range: #e9a23b; --bull: #2a78d6; --bear: #e76f51; --fvg-bull: #1baf7a; --fvg-bear: #b55dd6;
+    --sweep: #1d3557; --entry: #1f2328; --stop: #e76f51; --target: #2a9d8f; --accent: #e9a23b;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #15171a; --panel: #1d2024; --ink: #e8e8e6; --muted: #9aa0a6; --line: #30343a;
+      --wick: #9aa0a6; --future: rgba(255,255,255,0.04); --sweep: #8ab6d6; --entry: #e8e8e6;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #15171a; --panel: #1d2024; --ink: #e8e8e6; --muted: #9aa0a6; --line: #30343a;
+    --wick: #9aa0a6; --future: rgba(255,255,255,0.04); --sweep: #8ab6d6; --entry: #e8e8e6;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  header { padding: 14px 16px 4px; }
+  h1 { font-size: 18px; margin: 0 0 2px; }
+  .sub { color: var(--muted); margin: 0; }
+  .bar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 6px 16px; }
+  .bar .lbl { color: var(--muted); font-size: 13px; margin-left: 6px; }
+  button, select, input[type=text], input[type=datetime-local], .file { font: inherit; padding: 5px 9px; border-radius: 6px;
+    border: 1px solid var(--line); background: var(--panel); color: var(--ink); cursor: pointer; }
+  input[type=text] { cursor: text; min-width: 0; }
+  button.on { background: var(--accent); border-color: var(--accent); color: #1f2328; font-weight: 600; }
+  button:disabled { opacity: .45; cursor: default; }
+  .file input { display: none; }
+  .opts { display: none; gap: 6px; align-items: center; flex-wrap: wrap; }
+  .opts.show { display: flex; }
+  #wrap { margin: 0 16px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; position: relative; }
+  canvas { display: block; width: 100%; height: 560px; touch-action: none; cursor: crosshair; }
+  #status { padding: 6px 16px; color: var(--muted); min-height: 1.5em; }
+  #hint { padding: 0 16px; min-height: 1.5em; font-weight: 600; }
+  #selbar { display: none; }
+  #selbar.show { display: flex; }
+  #note { width: 320px; max-width: 100%; }
+  #help { margin: 6px 16px 20px; color: var(--muted); font-size: 13px; }
+  #help b { color: var(--ink); }
+  #help ul { margin: 4px 0; padding-left: 18px; }
+  @media (max-width: 640px) { canvas { height: 400px; } #note { width: 100%; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>SMC Labeller</h1>
+  <p class="sub">Replay the chart candle by candle, with the future hidden, and mark what you see: ranges, order blocks,
+    FVGs, liquidity sweeps and your trades. Everything runs in this browser; nothing is uploaded.</p>
+</header>
+
+<div class="bar">
+  <label class="file">Load M1 prices (CSV)<input type="file" id="csv" accept=".csv,.txt"></label>
+  <label class="file">Load my labels (CSV)<input type="file" id="labels" accept=".csv,.txt"></label>
+  <button id="export">Export labels (CSV)</button>
+  <span class="lbl">Start at (UTC)</span><input type="datetime-local" id="date">
+  <button id="go">Go</button>
+  <button id="random" title="A random start, so you don't pick the easy periods">Random start</button>
+  <button id="theme" title="Light / dark">◐</button>
+</div>
+<div class="bar">
+  <span class="lbl">Chart</span>
+  <select id="tf">
+    <option value="1">M1</option><option value="5">M5</option><option value="15" selected>M15</option>
+    <option value="30">M30</option><option value="60">H1</option><option value="240">H4</option><option value="1440">D1</option>
+  </select>
+  <button id="back" title="Left arrow (Shift: 1 minute)">◀</button>
+  <button id="step" title="Right arrow or Space (Shift: 1 minute)">Next candle ▶</button>
+  <button id="play" title="P">Play</button>
+  <span class="lbl">Look back</span>
+  <button id="panl" title="[">⟸</button><button id="panr" title="]">⟹</button>
+  <button id="zin" title="+">＋</button><button id="zout" title="-">－</button>
+</div>
+<div class="bar">
+  <span class="lbl">Mark</span>
+  <button data-tool="select" title="Esc">Select</button>
+  <button data-tool="range" title="1">Range</button>
+  <button data-tool="ob" title="2">Order block</button>
+  <button data-tool="fvg" title="3">FVG</button>
+  <button data-tool="sweep" title="4">Liquidity sweep</button>
+  <button data-tool="trade" title="5">Trade</button>
+  <button id="skip" title="K: price is at a POI and you would pass">Looked, no trade</button>
+  <span class="opts" id="opt-range">
+    <select id="rtype"><option>pause</option><option>staircase</option><option>wyckoff</option><option>other</option></select>
+    <select id="rdir"><option value="up">up</option><option value="down">down</option><option value="none">no direction</option></select>
+  </span>
+  <span class="opts" id="opt-zone">
+    <select id="zdir"><option value="auto">bull / bear: auto</option><option value="bull">bull</option><option value="bear">bear</option></select>
+  </span>
+  <span class="opts" id="opt-trade">
+    <select id="otype"><option value="limit">limit</option><option value="market">market</option></select>
+    <select id="setup"><option>sniper</option><option>momentum</option><option>other</option></select>
+  </span>
+</div>
+<div class="bar" id="selbar">
+  <span class="lbl" id="selname"></span>
+  <input type="text" id="note" placeholder="note / tags (e.g. swept asia low, H1 POI)">
+  <button id="endhere" title="E: the zone stops counting here (mitigated / filled / range over)">Ends here</button>
+  <button id="del" title="Delete">Delete</button>
+</div>
+
+<div id="wrap"><canvas id="c"></canvas></div>
+<div id="hint"></div>
+<div id="status">Load an M1 CSV (from get_dukascopy.py or an MT5 export) to start.</div>
+<div id="help">
+  <b>Replay.</b> You only ever see candles up to the replay point; the shaded area on the right is the future.
+  → or Space = next candle of this chart, Shift+→ = one minute, ← back. Switch the chart (M1 ... D1) any time:
+  the candle still forming is drawn from the minutes so far. Every mark remembers the replay time it was made at,
+  so the labels never use hindsight.
+  <ul>
+    <li><b>Range</b> (1): drag a box over it. Choose pause / staircase / wyckoff and up / down first.</li>
+    <li><b>Order block</b> (2): click the candle (its high to low becomes the zone) or drag a box for your own zone.
+      Below the price = bullish, above = bearish, unless you pick one.</li>
+    <li><b>FVG</b> (3): click the middle candle of the three and the gap is measured, or drag a box.</li>
+    <li><b>Liquidity sweep</b> (4): click the swing high / low that was taken, then the candle that took it.</li>
+    <li><b>Trade</b> (5): limit = click entry, stop, take-profit; market = click stop, take-profit (entry is the last close).
+      Select a POI first to link the trade to it. <b>Looked, no trade</b> (K) records a pass.</li>
+    <li><b>Select</b> (Esc): click a mark to add a note, end it (E) or delete it.</li>
+  </ul>
+  Zoom with + / − or the mouse wheel, look back with [ and ]. Your work is saved in this browser per price file;
+  export the CSV regularly. The results of your trades are worked out later from the prices (labels.py), not typed in.
+</div>
+
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  const cv = $("c"), ctx = cv.getContext("2d");
+  const M = 60000;
+  let base = null, fileKey = null;   // M1: {t:[ms], o,h,l,c}
+  let cur = 0;                       // replay point: index of the last visible M1 candle
+  let marks = [], nextId = 1, reviewed = [], seg = null;
+  let tool = "select", sel = -1, pending = [], drag = null, playing = null;
+  let per = 120, lookback = 0, hover = null;
+  const tfMin = () => +$("tf").value;
+  const TF_NAME = { 1: "M1", 5: "M5", 15: "M15", 30: "M30", 60: "H1", 240: "H4", 1440: "D1" };
+  const cssVar = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+  const iso = ms => new Date(ms).toISOString().slice(0, 19).replace("T", " ");
+  const ts = s => Date.parse(String(s).trim().slice(0, 19).replace(" ", "T") + "Z");
+  const fmt = p => p.toFixed(p > 1000 ? 2 : p > 10 ? 3 : 5);
+
+  // ---------- prices ----------
+  function decode(buf) {
+    const b = new Uint8Array(buf.slice(0, 4));
+    const utf16 = (b[0] === 0xFF && b[1] === 0xFE) || b[1] === 0 || b[3] === 0;
+    return new TextDecoder(utf16 ? "utf-16le" : "utf-8").decode(buf).replace(/^﻿/, "");
+  }
+  function parseCSV(text) {
+    const lines = text.split(/\r?\n/).filter(s => s.trim());
+    const sep = lines[0].includes("\t") ? "\t" : (lines[0].includes(";") ? ";" : ",");
+    const head = lines[0].split(sep).map(s => s.trim().replace(/[<>]/g, "").toLowerCase());
+    const col = n => head.indexOf(n);
+    const iD = col("date"), iT = col("time"), iO = col("open"), iH = col("high"), iL = col("low"), iC = col("close");
+    const iStamp = iT >= 0 ? iT : ["datetime", "timestamp", "date"].map(col).find(i => i >= 0);
+    const t = [], o = [], h = [], l = [], c = [];
+    for (let k = 1; k < lines.length; k++) {
+      const f = lines[k].split(sep);
+      let s = (iD >= 0 && iT >= 0) ? f[iD] + " " + f[iT] : f[iStamp];
+      s = s.trim().replace(/\./g, "-").replace(" ", "T");
+      const ms = Date.parse(s.length <= 16 ? s + ":00Z" : s.slice(0, 19) + "Z");
+      if (!isFinite(ms)) continue;
+      t.push(ms); o.push(+f[iO]); h.push(+f[iH]); l.push(+f[iL]); c.push(+f[iC]);
+    }
+    return { t, o, h, l, c };
+  }
+  // candles of `minutes` built only from the M1 candles up to the replay point (the last one may be forming)
+  const cache = {};
+  let shown = null;
+  function bars(minutes) {
+    if (shown && shown.minutes === minutes && shown.cur === cur) return shown;
+    let full = cache[minutes];
+    if (!full) {
+      const step = minutes * M; full = { t: [], o: [], h: [], l: [], c: [], first: [] };
+      let b0 = null;
+      for (let i = 0; i < base.t.length; i++) {
+        const b = Math.floor(base.t[i] / step) * step;
+        if (b !== b0) { full.t.push(b); full.o.push(base.o[i]); full.h.push(base.h[i]); full.l.push(base.l[i]); full.c.push(base.c[i]); full.first.push(i); b0 = b; }
+        else { const j = full.t.length - 1; full.h[j] = Math.max(full.h[j], base.h[i]); full.l[j] = Math.min(full.l[j], base.l[i]); full.c[j] = base.c[i]; }
+      }
+      cache[minutes] = full;
+    }
+    const n = upto(full.t, base.t[cur]) + 1;            // candles started by the replay point
+    const out = { t: full.t.slice(0, n), o: full.o.slice(0, n), h: full.h.slice(0, n), l: full.l.slice(0, n), c: full.c.slice(0, n) };
+    const f0 = full.first[n - 1];                       // rebuild the last one from its minutes so far
+    let hi = -Infinity, lo = Infinity;
+    for (let i = f0; i <= cur; i++) { hi = Math.max(hi, base.h[i]); lo = Math.min(lo, base.l[i]); }
+    out.h[n - 1] = hi; out.l[n - 1] = lo; out.c[n - 1] = base.c[cur];
+    out.closed = base.t[cur] + M >= full.t[n - 1] + minutes * M;   // is that last candle finished?
+    out.minutes = minutes; out.cur = cur;
+    return (shown = out);
+  }
+  function upto(arr, v) { let lo = 0, hi = arr.length - 1; if (v < arr[0]) return -1;
+    while (lo < hi) { const m = (lo + hi + 1) >> 1; if (arr[m] <= v) lo = m; else hi = m - 1; } return lo; }
+  const now = () => base.t[cur] + M;                    // the replay time: the close of the last visible minute
+
+  // ---------- drawing ----------
+  let geo = null, B = null;
+  function draw() {
+    const dpr = window.devicePixelRatio || 1, W = cv.clientWidth, H = cv.clientHeight;
+    cv.width = W * dpr; cv.height = H * dpr; ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.fillStyle = cssVar("--panel"); ctx.fillRect(0, 0, W, H);
+    if (!base) return;
+    B = bars(tfMin());
+    const N = B.t.length, future = Math.max(3, Math.round(per * 0.15));
+    const z = Math.max(1, N - lookback), a = Math.max(0, z - per);
+    const L = 8, R = 72, T = 12, BOT = 26, cw = (W - L - R) / (z - a + (lookback ? 0 : future));
+    let lo = Infinity, hi = -Infinity;
+    for (let i = a; i < z; i++) { lo = Math.min(lo, B.l[i]); hi = Math.max(hi, B.h[i]); }
+    const pad = (hi - lo) * 0.08 || 1; lo -= pad; hi += pad;
+    const x = i => L + (i - a + 0.5) * cw, y = p => T + (hi - p) / (hi - lo) * (H - T - BOT);
+    const xt = ms => { const i = upto(B.t, ms); return i < 0 ? L : x(i); };   // a time -> the candle containing it
+    geo = { a, z, cw, L, R, T, BOT, W, H, lo, hi, x, y, xt, inv: py => hi - (py - T) / (H - T - BOT) * (hi - lo),
+            col: px => Math.max(a, Math.min(N - 1, a + Math.floor((px - L) / cw))) };
+    // the future
+    if (!lookback) { ctx.fillStyle = cssVar("--future"); ctx.fillRect(x(N - 1) + cw / 2, T, W - R - x(N - 1) - cw / 2, H - T - BOT); }
+    // grid
+    ctx.strokeStyle = cssVar("--line"); ctx.fillStyle = cssVar("--muted"); ctx.font = "11px system-ui"; ctx.lineWidth = 1;
+    for (let k = 0; k <= 6; k++) {
+      const p = lo + (hi - lo) * k / 6, yy = y(p);
+      ctx.beginPath(); ctx.moveTo(L, yy); ctx.lineTo(W - R, yy); ctx.stroke();
+      ctx.fillText(fmt(p), W - R + 4, yy + 4);
+    }
+    const n = z - a;
+    for (let k = 0; k < 5; k++) {
+      const i = a + Math.floor(k * (n - 1) / 4);
+      const s = iso(B.t[i]); ctx.fillText(tfMin() >= 1440 ? s.slice(0, 10) : s.slice(5, 16), Math.min(Math.max(x(i) - 34, L), W - R - 80), H - 8);
+    }
+    ctx.save(); ctx.beginPath(); ctx.rect(L, T, W - L - R, H - T - BOT); ctx.clip();
+    // marks under the candles
+    marks.forEach((m, k) => { if (m.marked_at <= now()) drawMark(m, k === sel, false); });
+    // candles
+    for (let i = a; i < z; i++) {
+      const up = B.c[i] >= B.o[i], xx = x(i);
+      ctx.strokeStyle = cssVar("--wick"); ctx.beginPath(); ctx.moveTo(xx, y(B.h[i])); ctx.lineTo(xx, y(B.l[i])); ctx.stroke();
+      ctx.fillStyle = up ? cssVar("--up") : cssVar("--down");
+      const y1 = y(Math.max(B.o[i], B.c[i])), y2 = y(Math.min(B.o[i], B.c[i]));
+      const bw = Math.max(1, cw * 0.7);
+      if (i === N - 1 && !B.closed) { ctx.strokeStyle = ctx.fillStyle; ctx.strokeRect(xx - bw / 2, y1, bw, Math.max(1, y2 - y1)); }
+      else ctx.fillRect(xx - bw / 2, y1, bw, Math.max(1, y2 - y1));
+    }
+    // marks on top (lines and labels)
+    marks.forEach((m, k) => { if (m.marked_at <= now()) drawMark(m, k === sel, true); });
+    drawPending();
+    ctx.restore();
+    // last price
+    const lp = B.c[N - 1];
+    ctx.fillStyle = cssVar("--ink"); ctx.fillRect(W - R, y(lp) - 8, R, 16);
+    ctx.fillStyle = cssVar("--panel"); ctx.fillText(fmt(lp), W - R + 4, y(lp) + 4);
+    status();
+  }
+  const COLORS = m => m.kind === "range" ? cssVar("--range") : m.kind === "ob" ? cssVar(m.dir === "bull" ? "--bull" : "--bear")
+    : m.kind === "fvg" ? cssVar(m.dir === "bull" ? "--fvg-bull" : "--fvg-bear") : cssVar("--sweep");
+  function box(x1, x2, top, bottom, color, fill, dashed, width) {
+    const g = geo, y1 = g.y(top), y2 = g.y(bottom);
+    ctx.globalAlpha = fill; ctx.fillStyle = color; ctx.fillRect(x1, y1, x2 - x1, y2 - y1); ctx.globalAlpha = 1;
+    ctx.strokeStyle = color; ctx.lineWidth = width; ctx.setLineDash(dashed ? [5, 4] : []);
+    ctx.strokeRect(x1, y1, x2 - x1, y2 - y1); ctx.setLineDash([]);
+  }
+  function label(text, px, py, color) { ctx.font = "bold 10.5px system-ui"; ctx.fillStyle = color; ctx.fillText(text, px + 3, py - 3); }
+  function endOf(m) { return m.end ? Math.min(ts(m.end), now()) : now(); }
+  function drawMark(m, isSel, top) {
+    const g = geo, c = isSel ? cssVar("--sel") : COLORS(m), half = g.cw / 2;
+    if (m.kind === "range" || m.kind === "ob" || m.kind === "fvg") {
+      const x1 = g.xt(ts(m.start)) - half, x2 = g.xt(endOf(m) - 1) + half;
+      if (x2 < g.L || x1 > g.W - g.R) return;
+      if (!top) box(x1, x2, m.top, m.bottom, c, m.kind === "range" ? 0.10 : 0.16, m.kind === "fvg", isSel ? 2.4 : 1.4);
+      else label(m.kind === "range" ? `${m.subtype} ${m.dir !== "none" ? m.dir : ""} ${m.tf}` : `${m.dir} ${m.kind.toUpperCase()} ${m.tf}`,
+                 Math.max(x1, g.L), g.y(m.top), c);
+    } else if (m.kind === "sweep" && top) {
+      const x1 = g.xt(ts(m.start)), x2 = g.xt(ts(m.end));
+      ctx.strokeStyle = c; ctx.lineWidth = isSel ? 2.4 : 1.6; ctx.beginPath(); ctx.moveTo(x1, g.y(m.level)); ctx.lineTo(x2 + half, g.y(m.level)); ctx.stroke();
+      ctx.beginPath(); ctx.arc(x2, g.y(m.level), 4, 0, 7); ctx.fillStyle = c; ctx.fill();
+      label(`sweep of ${m.dir === "low" ? "lows" : "highs"} ${m.tf}`, Math.max(x1, g.L), g.y(m.level) + (m.dir === "low" ? 14 : 0), c);
+    } else if (m.kind === "trade" && top) {
+      const x1 = g.xt(ts(m.start)), x2 = Math.max(g.xt(now() - 1) + half, x1 + 40);
+      const d = m.dir === "long" ? 1 : -1;
+      ctx.globalAlpha = 0.13; ctx.fillStyle = cssVar("--stop"); ctx.fillRect(x1, g.y(Math.max(m.entry, m.stop)), x2 - x1, Math.abs(g.y(m.stop) - g.y(m.entry)));
+      ctx.fillStyle = cssVar("--target"); ctx.fillRect(x1, g.y(Math.max(m.entry, m.target)), x2 - x1, Math.abs(g.y(m.target) - g.y(m.entry)));
+      ctx.globalAlpha = 1;
+      [["entry", m.entry], ["stop", m.stop], ["target", m.target]].forEach(([k, p]) => {
+        ctx.strokeStyle = isSel ? cssVar("--sel") : cssVar("--" + k); ctx.lineWidth = isSel ? 2.2 : 1.3; ctx.setLineDash(k === "entry" && m.order === "limit" ? [4, 3] : []);
+        ctx.beginPath(); ctx.moveTo(x1, g.y(p)); ctx.lineTo(x2, g.y(p)); ctx.stroke(); ctx.setLineDash([]);
+      });
+      const rr = Math.abs(m.target - m.entry) / Math.abs(m.entry - m.stop);
+      label(`${m.dir} ${m.order} ${m.subtype} ${rr.toFixed(1)}R`, x1, g.y(m.entry) + (d === 1 ? 14 : 0), isSel ? cssVar("--sel") : cssVar("--entry"));
+    } else if (m.kind === "skip" && top) {
+      const xx = g.xt(ts(m.start));
+      ctx.strokeStyle = cssVar("--muted"); ctx.setLineDash([2, 3]); ctx.beginPath(); ctx.moveTo(xx, g.T); ctx.lineTo(xx, g.H - g.BOT); ctx.stroke(); ctx.setLineDash([]);
+      label("no trade", xx, g.T + 12, isSel ? cssVar("--sel") : cssVar("--muted"));
+    }
+  }
+  function drawPending() {
+    const g = geo;
+    if (drag && drag.moved) {
+      ctx.strokeStyle = cssVar("--accent"); ctx.setLineDash([3, 3]); ctx.lineWidth = 1.5;
+      ctx.strokeRect(Math.min(drag.x0, drag.x1), Math.min(drag.y0, drag.y1), Math.abs(drag.x1 - drag.x0), Math.abs(drag.y1 - drag.y0));
+      ctx.setLineDash([]);
+    }
+    if (tool === "trade" && hover) {
+      const prices = pending.map(p => p.price).concat([g.inv(hover[1])]);
+      if ($("otype").value === "market") prices.unshift(B.c[B.t.length - 1]);
+      ["entry", "stop", "target"].forEach((k, i) => {
+        if (prices[i] === undefined) return;
+        ctx.strokeStyle = cssVar("--" + k); ctx.setLineDash([2, 3]); ctx.beginPath();
+        ctx.moveTo(g.L, g.y(prices[i])); ctx.lineTo(g.W - g.R, g.y(prices[i])); ctx.stroke(); ctx.setLineDash([]);
+        label(k + (i === 2 && prices.length === 3 ? `  ${(Math.abs(prices[2] - prices[0]) / Math.abs(prices[0] - prices[1])).toFixed(1)}R` : ""),
+              g.W - g.R - 90, g.y(prices[i]), cssVar("--" + k));
+      });
+    }
+    if (tool === "sweep" && pending.length) {
+      const p = pending[0];
+      ctx.strokeStyle = cssVar("--sweep"); ctx.setLineDash([3, 3]); ctx.beginPath();
+      ctx.moveTo(g.xt(p.time), g.y(p.price)); ctx.lineTo(g.W - g.R, g.y(p.price)); ctx.stroke(); ctx.setLineDash([]);
+    }
+  }
+  function status() {
+    const count = k => marks.filter(m => m.kind === k).length;
+    $("status").textContent = `${base.t.length} M1 candles · replay at ${iso(now()).slice(0, 16)} UTC · ` +
+      `ranges ${count("range")} · OBs ${count("ob")} · FVGs ${count("fvg")} · sweeps ${count("sweep")} · trades ${count("trade")} · ` +
+      `no-trade ${count("skip")}` + (lookback ? ` · looking back ${lookback} candles (] to return)` : "");
+    const hints = {
+      select: "Click a mark to select it.",
+      range: "Drag a box over the range.",
+      ob: "Click the order block candle, or drag your own zone.",
+      fvg: "Click the middle candle of the three, or drag the gap.",
+      sweep: pending.length ? "Now click the candle that took it." : "Click the swing high or low that was taken.",
+      trade: ["Click the ENTRY price.", "Click the STOP.", "Click the TAKE-PROFIT."][pending.length + ($("otype").value === "market" ? 1 : 0)] || "",
+    };
+    $("hint").textContent = hints[tool] || "";
+    const m = marks[sel];
+    $("selbar").classList.toggle("show", !!m);
+    if (m) {
+      $("selname").textContent = `Selected: ${m.kind === "skip" ? "no trade" : m.kind} ${m.dir || ""} ${m.subtype || ""} ${m.tf} (marked ${m.marked_at_s.slice(5, 16)})`;
+      if (document.activeElement !== $("note")) $("note").value = m.note || "";
+      $("endhere").disabled = !["range", "ob", "fvg"].includes(m.kind);
+    }
+  }
+
+  // ---------- marking ----------
+  const pt = e => { const r = cv.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
+  function add(m) {
+    m.id = nextId++; m.tf = TF_NAME[tfMin()]; m.marked_at = now(); m.marked_at_s = iso(now()); m.note = m.note || "";
+    marks.push(m); sel = marks.length - 1; save(); draw();
+  }
+  function zoneDir(top, bottom) {
+    const v = $("zdir").value; if (v !== "auto") return v;
+    return (top + bottom) / 2 <= B.c[B.t.length - 1] ? "bull" : "bear";     // below price = demand
+  }
+  function clickCandle(px, py) {
+    const i = geo.col(px); if (i < 0 || i >= B.t.length) return null;
+    return { i, time: B.t[i], price: geo.inv(py) };
+  }
+  function onClick(px, py) {
+    const g = geo, k = clickCandle(px, py); if (!k) return;
+    const last = B.t.length - 1, done = i => i < last || B.closed;          // only finished candles can be marked
+    if (tool === "select") { sel = hit(px, py); draw(); return; }
+    if (tool === "ob") {
+      if (!done(k.i)) return flash("That candle hasn't closed yet.");
+      return add({ kind: "ob", dir: zoneDir(B.h[k.i], B.l[k.i]), start: iso(B.t[k.i]), end: "", top: B.h[k.i], bottom: B.l[k.i] });
+    }
+    if (tool === "fvg") {
+      const i = k.i;
+      if (i < 1 || i + 1 > last || (i + 1 === last && !B.closed)) return flash("The candle after it hasn't closed yet.");
+      if (B.l[i + 1] > B.h[i - 1]) return add({ kind: "fvg", dir: "bull", start: iso(B.t[i]), end: "", top: B.l[i + 1], bottom: B.h[i - 1] });
+      if (B.h[i + 1] < B.l[i - 1]) return add({ kind: "fvg", dir: "bear", start: iso(B.t[i]), end: "", top: B.l[i - 1], bottom: B.h[i + 1] });
+      return flash("No gap around that candle on this chart. Drag a box to draw it yourself.");
+    }
+    if (tool === "sweep") {
+      if (!pending.length) {
+        const side = Math.abs(k.price - B.l[k.i]) < Math.abs(k.price - B.h[k.i]) ? "low" : "high";
+        pending = [{ time: B.t[k.i], price: side === "low" ? B.l[k.i] : B.h[k.i], side }]; draw(); return;
+      }
+      const p = pending[0];
+      if (k.time <= p.time) return flash("Click a later candle: the one that took the level.");
+      const took = p.side === "low" ? B.l[k.i] < p.price : B.h[k.i] > p.price;
+      pending = [];
+      add({ kind: "sweep", dir: p.side, start: iso(p.time), end: iso(k.time), level: p.price });
+      if (!took) flash("Note: that candle didn't trade beyond the level on this chart.");
+      return;
+    }
+    if (tool === "trade") {
+      const market = $("otype").value === "market";
+      pending.push({ price: k.price });
+      const need = market ? 2 : 3;
+      if (pending.length < need) { draw(); return; }
+      const [entry, stop, target] = market ? [B.c[last], pending[0].price, pending[1].price] : pending.map(p => p.price);
+      pending = [];
+      const dir = entry > stop ? "long" : "short", d = dir === "long" ? 1 : -1;
+      if ((target - entry) * d <= 0) { draw(); return flash("The take-profit must be on the other side of the entry from the stop."); }
+      if (!market && (B.c[last] - entry) * d <= 0) { draw(); return flash(`A ${dir === "long" ? "buy" : "sell"} limit there would fill straight away: use market.`); }
+      const poi = marks[sel] && ["ob", "fvg", "range", "sweep"].includes(marks[sel].kind) ? marks[sel].id : "";
+      return add({ kind: "trade", dir, order: $("otype").value, subtype: $("setup").value, start: iso(now()), entry, stop, target, link: poi });
+    }
+  }
+  function onDrag(d) {
+    const g = geo, last = B.t.length - 1;
+    let s = g.col(Math.min(d.x0, d.x1)), e = g.col(Math.max(d.x0, d.x1));
+    e = Math.min(e, last);
+    const top = g.inv(Math.min(d.y0, d.y1)), bottom = g.inv(Math.max(d.y0, d.y1));
+    if (tool === "range") {
+      if (e - s < 2) return flash("A range needs at least 3 candles.");
+      return add({ kind: "range", subtype: $("rtype").value, dir: $("rdir").value, start: iso(B.t[s]),
+                   end: iso(Math.min(B.t[e] + tfMin() * M, now())), top, bottom });
+    }
+    if (tool === "ob" || tool === "fvg") return add({ kind: tool, dir: zoneDir(top, bottom), start: iso(B.t[s]), end: "", top, bottom });
+  }
+  function hit(px, py) {
+    const g = geo, p = g.inv(py), t = B.t[g.col(px)], tol = (g.hi - g.lo) * 0.012;
+    for (let k = marks.length - 1; k >= 0; k--) {
+      const m = marks[k]; if (m.marked_at > now()) continue;
+      if (["range", "ob", "fvg"].includes(m.kind)) {
+        const end = endOf(m);
+        if (t >= upto_t(ts(m.start)) && t < end && p <= m.top + tol && p >= m.bottom - tol) return k;
+      } else if (m.kind === "sweep") {
+        if (t >= upto_t(ts(m.start)) && t <= ts(m.end) && Math.abs(p - m.level) < tol * 2) return k;
+      } else if (m.kind === "trade") {
+        if (t >= upto_t(ts(m.start)) && p <= Math.max(m.stop, m.target) && p >= Math.min(m.stop, m.target)) return k;
+      } else if (m.kind === "skip") {
+        if (Math.abs(g.xt(ts(m.start)) - px) < 6) return k;
+      }
+    }
+    return -1;
+  }
+  const upto_t = ms => { const i = upto(B.t, ms); return i < 0 ? ms : B.t[i]; };
+  let flashTimer = null;
+  function flash(text) { $("hint").textContent = text; clearTimeout(flashTimer); flashTimer = setTimeout(() => status(), 2600); }
+
+  cv.addEventListener("pointerdown", e => { if (!base) return; const [px, py] = pt(e); drag = { x0: px, y0: py, x1: px, y1: py, moved: false }; cv.setPointerCapture(e.pointerId); });
+  cv.addEventListener("pointermove", e => {
+    if (!base) return; const [px, py] = pt(e); hover = [px, py];
+    if (drag) { drag.x1 = px; drag.y1 = py; drag.moved = ["range", "ob", "fvg"].includes(tool) && Math.abs(px - drag.x0) + Math.abs(py - drag.y0) > 8; }
+    if (drag || tool === "trade" || tool === "sweep") draw();
+  });
+  cv.addEventListener("pointerleave", () => { hover = null; if (base) draw(); });
+  cv.addEventListener("pointerup", () => {
+    if (!drag) return; const d = drag; drag = null;
+    if (d.moved) onDrag(d); else onClick(d.x0, d.y0);
+    draw();
+  });
+  cv.addEventListener("wheel", e => { if (!base) return; e.preventDefault(); zoom(e.deltaY > 0 ? 1.15 : 1 / 1.15); }, { passive: false });
+
+  // ---------- replay ----------
+  function stepTo(i) {
+    cur = Math.max(0, Math.min(base.t.length - 1, i));
+    if (seg) seg.end = Math.max(seg.end, now());
+    lookback = 0; save(); draw();
+  }
+  function next(minuteOnly) {
+    if (cur >= base.t.length - 1) return;
+    if (minuteOnly || tfMin() === 1) return stepTo(cur + 1);
+    const step = tfMin() * M, barEnd = ms => Math.floor(ms / step) * step + step;
+    let e = barEnd(base.t[cur]);                                   // finish this candle ...
+    if (base.t[cur] + M >= e) e = barEnd(base.t[cur + 1]);         // ... or, if it's finished, the next one
+    let i = cur + 1; while (i + 1 < base.t.length && base.t[i + 1] < e) i++;
+    stepTo(i);
+  }
+  function prev(minuteOnly) {
+    if (minuteOnly || tfMin() === 1) return stepTo(cur - 1);
+    const step = tfMin() * M, start = Math.floor(base.t[cur] / step) * step;
+    stepTo(upto(base.t, start - 1));
+  }
+  function startAt(ms) {
+    cur = Math.max(0, upto(base.t, ms)); seg = { start: now(), end: now() }; reviewed.push(seg); pending = []; sel = -1; lookback = 0; save(); draw();
+  }
+  function zoom(f) { per = Math.max(20, Math.min(600, Math.round(per * f))); draw(); }
+  function pan(k) { lookback = Math.max(0, lookback + k * Math.floor(per * 0.5)); draw(); }
+  function togglePlay() {
+    if (playing) { clearInterval(playing); playing = null; $("play").textContent = "Play"; return; }
+    playing = setInterval(() => { if (cur >= base.t.length - 1) return togglePlay(); next(false); }, 350);
+    $("play").textContent = "Pause";
+  }
+
+  // ---------- saving ----------
+  const COLS = ["id", "kind", "tf", "dir", "subtype", "start", "end", "top", "bottom", "level", "entry", "stop", "target",
+                "order", "link", "marked_at", "note"];
+  function rowsOut() {
+    const rows = marks.map(m => ({ ...m, marked_at: m.marked_at_s }));
+    reviewed.filter(r => r.end > r.start).forEach(r => rows.push({ kind: "reviewed", start: iso(r.start), end: iso(r.end), marked_at: iso(r.end) }));
+    return rows;
+  }
+  function toCSV() {
+    const q = v => { if (v === undefined || v === null) return ""; const s = typeof v === "number" ? String(+v.toPrecision(10)) : String(v);
+      return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
+    return [COLS.join(",")].concat(rowsOut().map(r => COLS.map(c => q(r[c])).join(","))).join("\n") + "\n";
+  }
+  function fromCSV(text) {
+    const rows = [], lines = text.replace(/\r/g, "").split("\n").filter(s => s.trim());
+    const split = line => { const out = []; let s = "", inq = false;
+      for (let i = 0; i < line.length; i++) { const ch = line[i];
+        if (inq) { if (ch === '"' && line[i + 1] === '"') { s += '"'; i++; } else if (ch === '"') inq = false; else s += ch; }
+        else if (ch === '"') inq = true; else if (ch === ",") { out.push(s); s = ""; } else s += ch; }
+      out.push(s); return out; };
+    const head = split(lines[0]);
+    for (let k = 1; k < lines.length; k++) { const f = split(lines[k]), r = {}; head.forEach((h, i) => r[h] = f[i] ?? ""); rows.push(r); }
+    marks = []; reviewed = []; nextId = 1;
+    rows.forEach(r => {
+      if (r.kind === "reviewed") { reviewed.push({ start: ts(r.start), end: ts(r.end) }); return; }
+      const m = { ...r, id: +r.id, marked_at: ts(r.marked_at), marked_at_s: r.marked_at.slice(0, 19) };
+      ["top", "bottom", "level", "entry", "stop", "target"].forEach(c => m[c] = r[c] === "" ? undefined : +r[c]);
+      if (m.link !== "") m.link = +m.link;
+      marks.push(m); nextId = Math.max(nextId, m.id + 1);
+    });
+    seg = null;
+  }
+  const key = k => "smcLabeller." + fileKey + "." + k;
+  function save() {
+    if (!fileKey) return;
+    try { localStorage.setItem(key("labels"), toCSV()); localStorage.setItem(key("cur"), String(base.t[cur])); } catch (e) {}
+  }
+  function restore() {
+    let text = null, at = null;
+    try { text = localStorage.getItem(key("labels")); at = localStorage.getItem(key("cur")); } catch (e) {}
+    if (text) fromCSV(text);
+    if (at) { cur = Math.max(0, upto(base.t, +at)); seg = { start: now(), end: now() }; reviewed.push(seg); }
+    else startAt(base.t[Math.min(base.t.length - 1, 3 * 1440)]);
+  }
+
+  // ---------- controls ----------
+  function setTool(t) {
+    tool = t; pending = [];
+    document.querySelectorAll("[data-tool]").forEach(b => b.classList.toggle("on", b.dataset.tool === t));
+    $("opt-range").classList.toggle("show", t === "range");
+    $("opt-zone").classList.toggle("show", t === "ob" || t === "fvg");
+    $("opt-trade").classList.toggle("show", t === "trade");
+    if (base) draw();
+  }
+  document.querySelectorAll("[data-tool]").forEach(b => b.onclick = () => setTool(b.dataset.tool));
+  const del = () => { if (sel >= 0) { marks.splice(sel, 1); sel = -1; save(); draw(); } };
+  const endHere = () => { const m = marks[sel]; if (m && ["range", "ob", "fvg"].includes(m.kind)) { m.end = iso(now()); save(); draw(); } };
+  const skip = () => { if (base) add({ kind: "skip", start: iso(now()),
+                                         link: marks[sel] && ["ob", "fvg", "range", "sweep"].includes(marks[sel].kind) ? marks[sel].id : "" }); };
+  $("del").onclick = del; $("endhere").onclick = endHere; $("skip").onclick = skip;
+  $("note").oninput = () => { if (marks[sel]) { marks[sel].note = $("note").value; save(); } };
+  $("step").onclick = () => base && next(false); $("back").onclick = () => base && prev(false);
+  $("play").onclick = () => base && togglePlay();
+  $("panl").onclick = () => base && pan(1); $("panr").onclick = () => base && pan(-1);
+  $("zin").onclick = () => base && zoom(1 / 1.25); $("zout").onclick = () => base && zoom(1.25);
+  $("tf").onchange = () => { pending = []; lookback = 0; if (base) draw(); };
+  $("otype").onchange = () => { pending = []; if (base) draw(); };
+  $("go").onclick = () => { if (base && $("date").value) startAt(Date.parse($("date").value + ":00Z")); };
+  $("random").onclick = () => { if (base) startAt(base.t[Math.floor(1440 * 3 + Math.random() * Math.max(1, base.t.length - 1440 * 4))]); };
+  $("export").onclick = () => {
+    if (!base) return;
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([toCSV()], { type: "text/csv" }));
+    a.download = `labels_${fileKey.replace(/\.[^.]*$/, "")}.csv`; a.click();
+  };
+  $("theme").onclick = () => { const r = document.documentElement, dark = matchMedia("(prefers-color-scheme: dark)").matches;
+    const c = r.dataset.theme || (dark ? "dark" : "light"); r.dataset.theme = c === "dark" ? "light" : "dark"; if (base) draw(); };
+  document.addEventListener("keydown", e => {
+    if (!base || e.target.tagName === "INPUT" || e.target.tagName === "SELECT") return;
+    const k = e.key;
+    if (k === "ArrowRight" || k === " ") { e.preventDefault(); next(e.shiftKey); }
+    else if (k === "ArrowLeft") { e.preventDefault(); prev(e.shiftKey); }
+    else if (k === "Escape") setTool("select");
+    else if ("12345".includes(k) && k.length === 1) setTool(["range", "ob", "fvg", "sweep", "trade"][+k - 1]);
+    else if (k === "Delete" || k === "Backspace") del();
+    else if (k === "e" || k === "E") endHere();
+    else if (k === "k" || k === "K") skip();
+    else if (k === "p" || k === "P") togglePlay();
+    else if (k === "[") pan(1); else if (k === "]") pan(-1);
+    else if (k === "+" || k === "=") zoom(1 / 1.25); else if (k === "-") zoom(1.25);
+  });
+  $("csv").onchange = async e => {
+    const f = e.target.files[0]; if (!f) return;
+    const d = parseCSV(decode(await f.arrayBuffer()));
+    if (!d.t.length) { $("status").textContent = "Couldn't read that file. Expected time (or date + time) and open, high, low, close columns."; return; }
+    base = d; fileKey = f.name; shown = null; for (const k in cache) delete cache[k];
+    marks = []; reviewed = []; nextId = 1; sel = -1;
+    restore(); draw();
+  };
+  $("labels").onchange = async e => {
+    const f = e.target.files[0]; if (!f || !base) return flash("Load the prices first.");
+    fromCSV(await f.text()); seg = { start: now(), end: now() }; reviewed.push(seg); sel = -1; save(); draw();
+  };
+  window.addEventListener("resize", () => base && draw());
+  document.querySelectorAll("button, select").forEach(b => b.addEventListener(b.tagName === "SELECT" ? "change" : "click", () => b.blur()));
+  setTool("select");
+  draw();
+  window.__labeller = { get marks() { return marks; }, toCSV, stepTo, bars, redraw: draw, get cur() { return cur; },   // for the tests
+                        get geo() { return geo; }, visible: () => marks.filter(m => m.marked_at <= now()) };
+})();
+</script>
+</body>
+</html>

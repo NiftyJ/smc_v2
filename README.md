@@ -36,6 +36,13 @@ New version of the SMC bot, built one indicator at a time. The strategy comes la
   `python live.py --symbol XAUUSD` (watch) / `python live.py --symbol XAUUSD --trade --risk 0.5` (demo).
 - `get_dukascopy.py`: free M1 history (`python get_dukascopy.py XAUUSD 2026-06-01 2026-10-03`).
 - `show_indicators.py`: every indicator drawn on your chart, as a PDF to check by eye.
+- `label_tool.html`: label the chart yourself. Open it in a browser and load an M1 CSV. It replays the
+  chart candle by candle with the future hidden, on M1 up to D1. You mark ranges (pause / staircase /
+  wyckoff), order blocks, FVGs, liquidity sweeps, your trades (entry, stop, take-profit) and the
+  times you looked and passed. Each mark keeps the replay time it was made at, so the labels
+  hold no hindsight. Export the CSV.
+- `labels.py`: reads that CSV, checks it, and plays your trades out on the prices the backtest's way
+  (`python labels.py --data data/XAUUSD_M1.csv --labels labels_XAUUSD_M1.csv`).
 - `smcml/`: the helpers it uses (ATR, swings, FVGs, resampling, the simulator), copied unchanged
 
 ```
