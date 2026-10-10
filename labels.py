@@ -4,14 +4,15 @@ YOUR LABELS, from label_tool.html: read them, check them, and play your trades o
     python labels.py --data data/XAUUSD_M1.csv --labels labels_XAUUSD_M1.csv
 
 The CSV has one row per mark, plus one per setup (times in UTC, like the price file):
-  id, setup, step  the mark, the setup it belongs to (blank = none) and which step of it:
-                   htf_poi, h1_poi, h1_reaction, m15_structure, m15_poi, m1_range, breakout,
-                   m1_range_2 (the next range), sweep, m1_ob, trade
+  id, setup, step  the mark, the setup it belongs to (blank = a free example) and which step of it,
+                   worked out from what was marked and where: htf_poi, h1_poi, h1_reaction, m15_structure,
+                   m15_poi, m1_range, breakout, m1_range_2 (the next range), sweep, m1_bos, m1_ob, trade
+                   (also m15_reaction, m5_range, htf_range, m1_fvg)
   kind     setup | range | ob | fvg | liquidity | sweep | structure | reaction | trade
   tf       the chart it was marked on (M1 ... D1)
-  dir      setup, trade: long / short    range: up / down / none
+  dir      setup, trade: long / short (a setup without a trade may be blank)    range: up / down / none
            ob, fvg, structure, reaction: bull / bear    liquidity, sweep: high / low (the side of the level)
-  subtype  setup: trade / no trade    range: pause / staircase / wyckoff / other
+  subtype  setup: trade / no trade    range: pause / staircase / wyckoff
            structure: BOS / CHoCH / breakout    trade: sniper / momentum
   start    range: its first candle    ob: the candle    fvg: the middle candle of the three
            liquidity, sweep, structure: the swing point    reaction: the candle
@@ -37,7 +38,7 @@ from strategy import _finish, report  # noqa: E402
 TF = {"M1": "1min", "M5": "5min", "M15": "15min", "M30": "30min", "H1": "1h", "H4": "4h", "D1": "1D"}
 KINDS = ("setup", "range", "ob", "fvg", "liquidity", "sweep", "structure", "reaction", "trade")
 STEPS = ("htf_poi", "h1_poi", "h1_reaction", "m15_structure", "m15_poi", "m1_range", "breakout", "m1_range_2",
-         "sweep", "m1_ob", "trade")
+         "sweep", "m1_bos", "m1_ob", "trade", "m15_reaction", "m5_range", "htf_range", "m1_fvg")
 TEXT = ("step", "kind", "tf", "dir", "subtype", "order", "outcome", "note")
 
 
@@ -60,7 +61,7 @@ def problems(z):
         if r.kind not in KINDS:
             why = f"unknown kind {r.kind!r}"
         elif r.kind == "setup":
-            why = None if r.dir in ("long", "short") else "a setup is long or short"
+            why = None if r.dir in ("long", "short", "") else "a setup is long, short or blank"
         elif pd.isna(r.start) or r.tf not in TF:
             why = "no start time or timeframe"
         elif pd.notna(r.setup) and r.setup not in ids:

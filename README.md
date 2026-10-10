@@ -36,14 +36,16 @@ New version of the SMC bot, built one indicator at a time. The strategy comes la
   `python live.py --symbol XAUUSD` (watch) / `python live.py --symbol XAUUSD --trade --risk 0.5` (demo).
 - `get_dukascopy.py`: free M1 history (`python get_dukascopy.py XAUUSD 2026-06-01 2026-10-03`).
 - `show_indicators.py`: every indicator drawn on your chart, as a PDF to check by eye.
-- `label_tool.html`: mark your setups yourself, to collect ideal examples. Open it in a browser and
-  load an M1 CSV; the whole chart is visible. Switch between D1, H4, H1, M30, M15, M5 and M1 and it
-  stays on the same moment; double-click a candle to zoom into it on the next lower timeframe.
-  Press "+ Long setup" and work through its steps: D1 / H4 POI → H1 POI → reaction → M15 structure →
-  M15 POI → M1 range → breakout → next range → liquidity sweep → M1 order block → entry.
-  Tools: ranges (pause / staircase / wyckoff), order blocks, FVGs, liquidity, sweeps, BOS / CHoCH /
-  breakouts, reactions, and trades (limit, market or ½ momentum), with a magnet that snaps to
-  candles and to your own levels. The page shows how each trade played out. Export the CSV.
+- `label_tool.html`: mark your setups yourself, to collect ideal examples. Open it in Chrome and open an
+  M1 CSV; the whole chart is visible on D1 to M1 and every mark stays on every timeframe. Works like
+  TradingView: a key per tool (1 pause, 2 staircase, 3 wyckoff, O order block, F FVG, L liquidity,
+  S sweep, B BOS / CHoCH, R reaction, T trade, H ½ momentum), one mark and back to the cursor, drag to
+  scroll, double-click a candle to zoom into the next lower timeframe. Double-click or right-click a
+  mark to delete it, Ctrl+Z to undo. Sweeps and BOS find their breaking candle; trades need entry and
+  stop (take-profit 12R, or 10R for ½ momentum, until you drag it). N starts a setup: its steps (D1 / H4
+  POI → H1 POI → reaction → M15 structure → M1 range → sweep → M1 order block → entry, ...) tick off
+  from what you mark and where. Saved in the browser after every change; "Save to file" also writes
+  every change into a CSV, and "Reopen" brings the prices and that file back next time.
 - `labels.py`: reads that CSV, checks it, and plays your trades out the same way the page does
   (`python labels.py --data data/XAUUSD_M1.csv --labels labels_XAUUSD_M1.csv`).
 - `smcml/`: the helpers it uses (ATR, swings, FVGs, resampling, the simulator), copied unchanged

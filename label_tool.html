@@ -6,146 +6,158 @@
 <title>SMC Labeller</title>
 <style>
   :root {
-    --bg: #f7f7f5; --panel: #ffffff; --ink: #1f2328; --muted: #6b7280; --line: #e3e3df; --wick: #555;
+    --bg: #f4f4f1; --panel: #ffffff; --ink: #1f2328; --muted: #6b7280; --line: #e3e3df; --hover: #f1efe9; --wick: #555;
     --up: #2a9d8f; --down: #e76f51; --sel: #c1121f; --accent: #e9a23b; --done: #2a9d8f;
-    --range: #e9a23b; --ob-bull: #2a78d6; --ob-bear: #e2543a; --fvg-bull: #1baf7a; --fvg-bear: #a855c7;
-    --liq: #5b6b7f; --sweep: #1d3557; --bull: #1f8a70; --bear: #c2410c; --reaction: #d6336c;
+    --range: #e9a23b; --stair: #3d9970; --wyck: #8e5bd0; --ob-bull: #2a78d6; --ob-bear: #e2543a; --fvg-bull: #1baf7a;
+    --fvg-bear: #a855c7; --liq: #5b6b7f; --sweep: #1d3557; --bull: #1f8a70; --bear: #c2410c; --reaction: #d6336c;
     --entry: #1f2328; --stop: #e76f51; --target: #2a9d8f;
   }
   @media (prefers-color-scheme: dark) {
     :root:not([data-theme="light"]) {
-      --bg: #15171a; --panel: #1d2024; --ink: #e8e8e6; --muted: #9aa0a6; --line: #30343a; --wick: #9aa0a6;
-      --sweep: #8ab6d6; --liq: #a3b1c2; --entry: #e8e8e6; --bull: #4cc9a0; --bear: #f08a5d;
+      --bg: #121417; --panel: #1b1e22; --ink: #e8e8e6; --muted: #9aa0a6; --line: #30343a; --hover: #262a30; --wick: #9aa0a6;
+      --sweep: #8ab6d6; --liq: #a3b1c2; --entry: #e8e8e6; --bull: #4cc9a0; --bear: #f08a5d; --wyck: #b38bf0;
     }
   }
   :root[data-theme="dark"] {
-    --bg: #15171a; --panel: #1d2024; --ink: #e8e8e6; --muted: #9aa0a6; --line: #30343a; --wick: #9aa0a6;
-    --sweep: #8ab6d6; --liq: #a3b1c2; --entry: #e8e8e6; --bull: #4cc9a0; --bear: #f08a5d;
+    --bg: #121417; --panel: #1b1e22; --ink: #e8e8e6; --muted: #9aa0a6; --line: #30343a; --hover: #262a30; --wick: #9aa0a6;
+    --sweep: #8ab6d6; --liq: #a3b1c2; --entry: #e8e8e6; --bull: #4cc9a0; --bear: #f08a5d; --wyck: #b38bf0;
   }
   * { box-sizing: border-box; }
-  body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
-  header { padding: 12px 16px 2px; }
-  h1 { font-size: 18px; margin: 0 0 2px; }
-  .sub { color: var(--muted); margin: 0; }
-  .bar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 5px 16px; }
-  .lbl { color: var(--muted); font-size: 13px; margin-left: 4px; }
-  button, select, input[type=text], input[type=datetime-local], .file { font: inherit; font-size: 13.5px; padding: 4px 9px;
-    border-radius: 6px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); cursor: pointer; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 13.5px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  button, select, input[type=text], input[type=datetime-local], .file { font: inherit; padding: 4px 9px; border-radius: 6px;
+    border: 1px solid var(--line); background: var(--panel); color: var(--ink); cursor: pointer; }
   input[type=text] { cursor: text; min-width: 0; }
   button.on { background: var(--accent); border-color: var(--accent); color: #1f2328; font-weight: 600; }
-  button.done { border-color: var(--done); box-shadow: inset 0 -2px 0 var(--done); }
   button:disabled { opacity: .45; cursor: default; }
   .file input { display: none; }
-  .opts { display: none; gap: 6px; align-items: center; flex-wrap: wrap; }
-  .opts.show { display: flex; }
-  .group { display: flex; gap: 0; }
+  .lbl { color: var(--muted); font-size: 12.5px; }
+  .group { display: inline-flex; }
   .group button { border-radius: 0; margin-left: -1px; }
   .group button:first-child { border-radius: 6px 0 0 6px; margin-left: 0; }
   .group button:last-child { border-radius: 0 6px 6px 0; }
-  #steps { display: none; }
-  #steps.show { display: flex; }
-  #steps button { font-size: 12.5px; }
-  #wrap { margin: 0 16px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; position: relative; }
-  canvas { display: block; width: 100%; height: 600px; touch-action: none; }
-  #hint { padding: 4px 16px 0; min-height: 1.5em; font-weight: 600; }
-  #status { padding: 2px 16px; color: var(--muted); min-height: 1.5em; font-variant-numeric: tabular-nums; }
-  #selbar { display: none; }
+  .top { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 8px 12px; background: var(--panel); border-bottom: 1px solid var(--line); }
+  .brand { font-size: 15px; font-weight: 700; margin-right: 4px; }
+  .sep { width: 1px; height: 22px; background: var(--line); margin: 0 3px; }
+  #saved { margin-left: auto; font-size: 12.5px; color: var(--muted); }
+  #saved.warn { color: var(--stop); font-weight: 600; }
+  .main { display: grid; grid-template-columns: 148px minmax(0, 1fr) 268px; gap: 10px; padding: 10px 12px 0; }
+  #tools { display: flex; flex-direction: column; gap: 4px; }
+  #tools button { display: flex; justify-content: space-between; align-items: center; gap: 6px; text-align: left; }
+  kbd { font: 11px ui-monospace, Menlo, monospace; color: var(--muted); border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; }
+  #tools button.on kbd { color: #1f2328; border-color: rgba(31,35,40,.35); }
+  #tools .lockrow { margin-top: 6px; }
+  #opts { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; min-height: 31px; margin-bottom: 6px; }
+  #wrap { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; }
+  canvas { display: block; width: 100%; height: calc(100vh - 168px); min-height: 440px; touch-action: none; }
+  #hint { min-height: 1.4em; font-weight: 600; margin-top: 5px; }
+  #status { color: var(--muted); min-height: 1.4em; font-variant-numeric: tabular-nums; }
+  #selbar { display: none; flex-wrap: wrap; gap: 6px; align-items: center; margin: 4px 0 10px; }
   #selbar.show { display: flex; }
-  #note { width: 300px; max-width: 100%; }
-  #help { margin: 6px 16px 22px; color: var(--muted); font-size: 13px; }
-  #help b { color: var(--ink); }
-  #help ul { margin: 4px 0; padding-left: 18px; }
-  @media (max-width: 640px) { canvas { height: 420px; } #note { width: 100%; } }
+  #note { width: 280px; max-width: 100%; }
+  #panel { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 10px; display: flex;
+    flex-direction: column; gap: 8px; align-self: start; max-height: calc(100vh - 80px); overflow: auto; }
+  #panel h2 { font-size: 14px; margin: 0; display: flex; justify-content: space-between; align-items: center; }
+  #curname { font-weight: 600; }
+  #curctl { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+  #curctl[hidden] { display: none; }
+  #snote { width: 100%; }
+  #checklist { list-style: none; padding: 0; margin: 0; }
+  #checklist li { padding: 3px 6px; border-radius: 5px; cursor: pointer; display: flex; gap: 7px; color: var(--muted); }
+  #checklist li:hover { background: var(--hover); }
+  #checklist li.done { color: var(--ink); }
+  #checklist li.done .tick { color: var(--done); font-weight: 700; }
+  #slist .item { display: flex; justify-content: space-between; align-items: center; gap: 6px; padding: 4px 6px; border-radius: 5px; cursor: pointer; }
+  #slist .item:hover { background: var(--hover); }
+  #slist .item.on { background: var(--hover); font-weight: 600; }
+  #slist .item button { padding: 0 7px; }
+  details#help { margin: 6px 12px 22px; color: var(--muted); font-size: 13px; }
+  details#help summary { cursor: pointer; color: var(--ink); font-weight: 600; }
+  details#help b { color: var(--ink); }
+  details#help ul { margin: 4px 0; padding-left: 18px; }
+  @media (max-width: 980px) {
+    .main { grid-template-columns: minmax(0, 1fr); }
+    #tools { flex-direction: row; flex-wrap: wrap; }
+    #panel { max-height: none; }
+    canvas { height: 62vh; }
+    #saved { margin-left: 0; width: 100%; }
+  }
 </style>
 </head>
 <body>
-<header>
-  <h1>SMC Labeller</h1>
-  <p class="sub">Mark your setups the way you trade them, from the D1 / H4 POI down to the M1 entry. The whole chart is
-    visible: you are collecting ideal examples. It runs in this browser; nothing is uploaded.</p>
-</header>
-
-<div class="bar">
-  <label class="file">Load M1 prices (CSV)<input type="file" id="csv" accept=".csv,.txt"></label>
-  <label class="file">Load my labels (CSV)<input type="file" id="labels" accept=".csv,.txt"></label>
-  <button id="export">Export labels (CSV)</button>
-  <span class="lbl">Go to (UTC)</span><input type="datetime-local" id="date"><button id="go">Go</button>
-  <button id="theme" title="Light / dark">◐</button>
-</div>
-<div class="bar">
-  <span class="lbl">Timeframe</span>
+<div class="top">
+  <span class="brand">SMC Labeller</span>
+  <button id="openprices" title="Your M1 CSV (get_dukascopy.py or an MT5 export)">Open prices…</button>
+  <input type="file" id="csv" accept=".csv,.txt" hidden>
+  <button id="reopen" hidden>Reopen last files</button>
+  <label class="file">Load labels…<input type="file" id="labels" accept=".csv,.txt"></label>
+  <button id="savefile" title="Pick a file once; every change is then saved into it">Save to file…</button>
+  <button id="export">Export CSV</button>
+  <span class="sep"></span>
   <span class="group" id="tfs"></span>
-  <span class="lbl">Zoom</span>
-  <span class="group"><button id="zout" title="-">－</button><button id="zin" title="+">＋</button></span>
-  <button id="magnet" class="on" title="M: clicks snap to the candle's open / high / low / close and to your marked levels">Magnet</button>
-  <button id="showall" title="A: also show marks made on lower timeframes">All timeframes' marks</button>
-</div>
-<div class="bar">
-  <span class="lbl">Setup</span>
-  <select id="setup"></select>
-  <button id="newlong">+ Long setup</button>
-  <button id="newshort">+ Short setup</button>
-  <span class="opts" id="setupopts">
-    <select id="sdir"><option value="long">long</option><option value="short">short</option></select>
-    <select id="sstatus"><option value="trade">took the trade</option><option value="no trade">no trade (didn't confirm)</option></select>
-    <input type="text" id="snote" placeholder="setup note">
-    <button id="sgo" title="Show this setup's marks">Show</button>
-    <button id="sdel">Delete setup</button>
-  </span>
-</div>
-<div class="bar" id="steps"></div>
-<div class="bar">
-  <span class="lbl">Mark</span>
-  <span class="group" id="tools"></span>
-  <span class="opts" id="opt-range">
-    <select id="rtype"><option>pause</option><option>staircase</option><option>wyckoff</option><option>other</option></select>
-    <select id="rdir"><option value="auto">direction: from the setup</option><option value="up">up</option><option value="down">down</option><option value="none">no direction</option></select>
-  </span>
-  <span class="opts" id="opt-zone">
-    <select id="zdir"><option value="auto">bull / bear: auto</option><option value="bull">bull</option><option value="bear">bear</option></select>
-  </span>
-  <span class="opts" id="opt-structure">
-    <select id="stype"><option>BOS</option><option>CHoCH</option><option>breakout</option></select>
-  </span>
-  <span class="opts" id="opt-trade">
-    <select id="otype"><option value="limit">limit</option><option value="market">market</option><option value="half">½ momentum</option></select>
-  </span>
-</div>
-<div class="bar" id="selbar">
-  <span class="lbl" id="selname"></span>
-  <select id="selstep" title="Which step of the setup this mark is"></select>
-  <input type="text" id="note" placeholder="note (e.g. swept asia low, reaction weak)">
-  <button id="del" title="Delete">Delete</button>
+  <button id="magnet" class="on" title="M: clicks snap to the candle's open / high / low / close and to your levels">Magnet</button>
+  <button id="undo" title="Ctrl+Z (Ctrl+Y redo)">Undo</button>
+  <span class="sep"></span>
+  <input type="datetime-local" id="date" title="Go to a date (UTC)"><button id="go">Go</button>
+  <button id="theme" title="Light / dark">◐</button>
+  <span id="saved"></span>
 </div>
 
-<div id="wrap"><canvas id="c"></canvas></div>
-<div id="hint"></div>
-<div id="status">Load an M1 CSV (from get_dukascopy.py or an MT5 export) to start.</div>
-<div id="help">
-  <b>Moving around.</b> Drag the chart to scroll, mouse wheel to zoom, drag the price scale to stretch it (double-click it
-  to reset). Change timeframe with the buttons or PageUp / PageDown: the chart stays on the same moment. Double-click a
-  candle to zoom into it on the next lower timeframe (D1 → H4 → H1 → M15 → M5 → M1).
-  <b>Setups.</b> Press <b>+ Long setup</b> or <b>+ Short setup</b>, then work through the steps: each step button picks
-  its timeframe and tool and goes to where you are. Everything you mark joins the setup with that step. Steps are
-  optional and can hold several marks (two ranges, say).
-  <ul>
-    <li><b>Range</b> (1): drag over the candles; with Magnet on the box fits their highs and lows. Pick pause /
-      staircase / wyckoff first.</li>
-    <li><b>Order block</b> (2): click the candle (its high to low is the zone, its open is kept for the entry), or drag a zone.</li>
-    <li><b>FVG</b> (3): click the middle candle of the three and the gap is measured, or drag one.</li>
-    <li><b>Liquidity</b> (4): click a swing high or low; the line runs until price takes it.</li>
-    <li><b>Liquidity sweep</b> (5): click the swing point that was taken, then the candle that took it.</li>
-    <li><b>Structure</b> (6): click the swing point, then the candle that closed through it (BOS, CHoCH or breakout).</li>
-    <li><b>Reaction</b> (7): click the candle that reacted at the POI.</li>
-    <li><b>Trade</b> (8): limit = click the entry on the candle it fills on (Magnet snaps to the order block's open),
-      then the stop, then the take-profit. Market = the candle you enter on, stop, take-profit.
-      ½ momentum = the candle that closes the break, stop, take-profit: the limit goes halfway back to the stop.
-      The page shows how it played out.</li>
-    <li><b>Select</b> (Esc): click a mark to add a note, move it to another step, or delete it; drag its edges or lines to adjust.</li>
-  </ul>
-  Your work is saved in this browser for each price file; export the CSV regularly.
-  <code>python labels.py --data &lt;prices&gt; --labels &lt;your csv&gt;</code> checks it and plays your trades out.
+<div class="main">
+  <nav id="tools"></nav>
+  <div>
+    <div id="opts"></div>
+    <div id="wrap"><canvas id="c"></canvas></div>
+    <div id="hint"></div>
+    <div id="status">Open your M1 prices to start.</div>
+    <div id="selbar">
+      <span class="lbl" id="selname"></span>
+      <select id="selstep" title="The step of the setup this mark is"></select>
+      <input type="text" id="note" placeholder="note (e.g. swept asia low, weak reaction)">
+      <button id="del" title="Delete (or double-click / right-click the mark)">Delete</button>
+    </div>
+  </div>
+  <aside id="panel">
+    <h2>Setups <button id="newsetup" title="N">+ New setup</button></h2>
+    <div id="curname"></div>
+    <div id="curctl" hidden>
+      <span class="group"><button data-dir="long">long</button><button data-dir="short">short</button></span>
+      <button id="enddone" title="Stop adding marks to this setup">Done</button>
+      <input type="text" id="snote" placeholder="setup note">
+    </div>
+    <ul id="checklist"></ul>
+    <div class="lbl" id="slisthead"></div>
+    <div id="slist"></div>
+  </aside>
 </div>
+
+<details id="help">
+  <summary>How to use it</summary>
+  <p><b>Moving around.</b> Drag the chart to scroll (right-drag works with any tool), mouse wheel to zoom, drag the price
+    scale to stretch it (double-click it to reset). Timeframe buttons or PageUp / PageDown keep you on the same moment;
+    double-click an empty spot to zoom into that candle on the next lower timeframe (D1 → H4 → H1 → M15 → M5 → M1).</p>
+  <p><b>Marking.</b> Press a tool's key, mark once, and you're back on the cursor (Shift + the key, or Keep tool, keeps
+    the tool). Every mark stays on every timeframe.</p>
+  <ul>
+    <li><b>Ranges</b> (1 pause, 2 staircase, 3 wyckoff): drag over the candles; Magnet fits the box to their highs and lows.
+      Direction is worked out (staircase: its slope; pause: the move before it; wyckoff: none) unless you pick one.</li>
+    <li><b>Order block</b> (O): click the candle. <b>FVG</b> (F): click the middle candle. Or drag a zone.</li>
+    <li><b>Liquidity</b> (L): click a swing high or low; the line runs to where price takes it.</li>
+    <li><b>Sweep</b> (S) and <b>BOS / CHoCH</b> (B): click the swing point; the candle that took it (sweep) or closed
+      through it (BOS) is found for you. Drag its end to change it.</li>
+    <li><b>Reaction</b> (R): click the candle that reacted.</li>
+    <li><b>Trade</b> (T): click the entry on the candle it fills on (Magnet snaps to the order block's open), then the
+      stop. The take-profit goes at 12R (change it above the chart, or drag it). <b>½ momentum</b> (H): click the candle
+      that closes the break, then the stop: the limit goes halfway back, take-profit 10R. The result shows on the chart.</li>
+    <li><b>Delete</b>: double-click a mark, right-click it, or select it and press Delete. Ctrl+Z undoes, Ctrl+Y redoes.</li>
+  </ul>
+  <p><b>Setups.</b> Press N for a new setup: everything you mark joins it, and its steps tick themselves off by what you
+    mark and where (an order block on H4 is the D1 / H4 POI, on H1 the H1 POI, on M1 the M1 order block, and so on).
+    Click a step to jump to its mark, or to go to its timeframe and tool. Done (or Esc until it closes) ends the setup;
+    marks made outside a setup are kept as free examples, such as range examples.</p>
+  <p><b>Saving.</b> Every change is saved in this browser for each price file. Press <b>Save to file</b> once and every
+    change also goes into that CSV (Chrome / Edge); next time, <b>Reopen last files</b> brings back the prices and that
+    file. <code>python labels.py --data &lt;prices&gt; --labels &lt;csv&gt;</code> checks your labels and plays your trades out.</p>
+</details>
 
 <script>
 (() => {
@@ -153,34 +165,31 @@
   const cv = $("c"), ctx = cv.getContext("2d");
   const M = 60000;
   const TFS = [1440, 240, 60, 30, 15, 5, 1];
+  const LADDER = [1440, 240, 60, 15, 5, 1];          // double-click / PageDown: D1 -> H4 -> H1 -> M15 -> M5 -> M1
   const TF_NAME = { 1: "M1", 5: "M5", 15: "M15", 30: "M30", 60: "H1", 240: "H4", 1440: "D1" };
   const TF_MIN = { M1: 1, M5: 5, M15: 15, M30: 30, H1: 60, H4: 240, D1: 1440 };
-  // the steps of a setup: [key, name, timeframe, tool, tool options]
-  const STEPS = [
-    ["htf_poi", "D1 / H4 POI", 240, "ob", {}],
-    ["h1_poi", "H1 POI", 60, "ob", {}],
-    ["h1_reaction", "Reaction at the H1 POI", 60, "reaction", {}],
-    ["m15_structure", "M15 structure confirms", 15, "structure", { stype: "BOS" }],
-    ["m15_poi", "M15 POI", 15, "ob", {}],
-    ["m1_range", "M1 range", 1, "range", {}],
-    ["breakout", "Breakout of the range", 1, "structure", { stype: "breakout" }],
-    ["m1_range_2", "Next range (staircase / pause)", 1, "range", { rtype: "staircase" }],
-    ["sweep", "Liquidity sweep", 1, "sweep", {}],
-    ["m1_ob", "M1 order block", 1, "ob", {}],
-    ["trade", "Entry", 1, "trade", {}],
-  ];
-  const STEP_NAME = Object.fromEntries(STEPS.map(s => [s[0], s[1]]));
-  const TOOLS = [["select", "Select", "Esc"], ["range", "Range", "1"], ["ob", "Order block", "2"], ["fvg", "FVG", "3"],
-                 ["liquidity", "Liquidity", "4"], ["sweep", "Liquidity sweep", "5"], ["structure", "Structure", "6"],
-                 ["reaction", "Reaction", "7"], ["trade", "Trade", "8"]];
+  const TOOLS = [["select", "Cursor", "V"], ["pause", "Pause range", "1"], ["staircase", "Staircase", "2"], ["wyckoff", "Wyckoff", "3"],
+                 ["ob", "Order block", "O"], ["fvg", "FVG", "F"], ["liquidity", "Liquidity", "L"], ["sweep", "Sweep", "S"],
+                 ["structure", "BOS / CHoCH", "B"], ["reaction", "Reaction", "R"], ["trade", "Trade", "T"], ["half", "½ momentum", "H"]];
+  const RANGES = ["pause", "staircase", "wyckoff"];
   const BOX = ["range", "ob", "fvg"];
+  // a setup's steps, ticked off by what is marked and where: [key, name, timeframe, tool]
+  const STEPS = [["htf_poi", "D1 / H4 POI", 240, "ob"], ["h1_poi", "H1 POI", 60, "ob"], ["h1_reaction", "Reaction at the POI", 60, "reaction"],
+                 ["m15_structure", "M15 structure", 15, "structure"], ["m15_poi", "M15 POI", 15, "ob"], ["m1_range", "M1 range", 1, "pause"],
+                 ["breakout", "Breakout of the range", 1, "structure"], ["m1_range_2", "Next range (staircase / pause)", 1, "staircase"],
+                 ["sweep", "Liquidity sweep", 1, "sweep"], ["m1_bos", "M1 break after the sweep", 1, "structure"],
+                 ["m1_ob", "M1 order block", 1, "ob"], ["trade", "Entry", 1, "trade"]];
+  const STEP_NAME = Object.assign(Object.fromEntries(STEPS.map(s => [s[0], s[1]])),
+                                  { m15_reaction: "Reaction (M15 or lower)", m5_range: "M5 range", htf_range: "Range (M15 and up)", m1_fvg: "M1 FVG" });
+  const opt = { rdir: "auto", zdir: "auto", stype: "BOS", order: "limit", tp: "12", htp: "10" };
 
   let base = null, fileKey = null, baseMin = 1, dayBars = 1440;
   const full = {};
   let tf = 60, a = 0, per = 150, yZoom = 1, yShift = 0;
-  let marks = [], setups = [], nextId = 1, active = null, step = "";
-  let tool = "select", sel = -1, pending = [], drag = null, hover = null, magnet = true, showAll = false;
-  let geo = null, frame = false;
+  let marks = [], setups = [], nextId = 1, active = null;
+  let tool = "select", lockTool = false, sel = -1, hov = -1, pending = [], drag = null, hover = null, magnet = true;
+  let geo = null, frame = false, lastMade = 0, undoStack = [], redoStack = [], drawn = [];
+  let fileHandle = null, pendingLabels = null, savedAt = null, saveError = null, dirty = false;
 
   const cssVar = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
   const iso = ms => new Date(ms).toISOString().slice(0, 19).replace("T", " ");
@@ -191,6 +200,7 @@
   const lowerBound = (arr, v) => { let lo = 0, hi = arr.length; while (lo < hi) { const m = (lo + hi) >> 1; if (arr[m] < v) lo = m + 1; else hi = m; } return lo; };
   const num = v => v === undefined || v === null || v === "" ? undefined : +v;
   const setupOf = id => setups.find(s => s.id === id);
+  const storageOK = (() => { try { localStorage.setItem("smcLabeller.t", "1"); localStorage.removeItem("smcLabeller.t"); return true; } catch (e) { return false; } })();
 
   // ---------- prices ----------
   function decode(buf) {
@@ -218,10 +228,10 @@
   }
   function bars(minutes) {                       // candles of `minutes` built from the M1 data (UTC, like pandas)
     if (full[minutes]) return full[minutes];
-    const step = minutes * M, out = { t: [], o: [], h: [], l: [], c: [] };
+    const w = minutes * M, out = { t: [], o: [], h: [], l: [], c: [] };
     let b0 = null;
     for (let i = 0; i < base.t.length; i++) {
-      const b = Math.floor(base.t[i] / step) * step;
+      const b = Math.floor(base.t[i] / w) * w;
       if (b !== b0) { out.t.push(b); out.o.push(base.o[i]); out.h.push(base.h[i]); out.l.push(base.l[i]); out.c.push(base.c[i]); b0 = b; }
       else { const j = out.t.length - 1; out.h[j] = Math.max(out.h[j], base.h[i]); out.l[j] = Math.min(out.l[j], base.l[i]); out.c[j] = base.c[i]; }
     }
@@ -256,6 +266,14 @@
     for (let k = i; k < base.t.length; k++) if (m.dir === "high" ? base.h[k] > m.level : base.l[k] < m.level) return iso(base.t[k]);
     return "";
   }
+  function firstBreak(i, side, level, close) {                         // on this chart: the first later candle beyond the level
+    const b = B();
+    for (let j = i + 1; j < b.t.length; j++) {
+      const x = close ? b.c[j] : (side === "high" ? b.h[j] : b.l[j]);
+      if (side === "high" ? x > level : x < level) return j;
+    }
+    return -1;
+  }
 
   // ---------- view ----------
   function centerTime() { const b = B(), n = b.t.length; return b.t[Math.max(0, Math.min(n - 1, Math.round(a + per / 2 - 0.5)))]; }
@@ -267,7 +285,6 @@
     document.querySelectorAll("#tfs button").forEach(b => b.classList.toggle("on", +b.dataset.tf === tf));
     saveView(); draw();
   }
-  const LADDER = [1440, 240, 60, 15, 5, 1];       // double-click / PageDown: D1 -> H4 -> H1 -> M15 -> M5 -> M1
   function zoomTF(dir, at) {                       // dir -1: lower timeframe (zoom in), +1: higher
     const next = dir < 0 ? LADDER.find(m => m < tf) : [...LADDER].reverse().find(m => m > tf);
     if (next) setTF(next, at);
@@ -286,7 +303,7 @@
     const dpr = window.devicePixelRatio || 1, W = cv.clientWidth, H = cv.clientHeight;
     cv.width = W * dpr; cv.height = H * dpr; ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.fillStyle = cssVar("--panel"); ctx.fillRect(0, 0, W, H);
-    if (!base) { ctx.fillStyle = cssVar("--muted"); ctx.font = "14px system-ui"; ctx.fillText("Load an M1 CSV to start.", 20, 30); return; }
+    if (!base) { ctx.fillStyle = cssVar("--muted"); ctx.font = "14px system-ui"; ctx.fillText("Open your M1 prices to start.", 20, 30); return; }
     const b = B(), n = b.t.length, tfMs = tf * M;
     const L = 8, R = 78, T = 12, BOT = 26, cw = (W - L - R) / per;
     const i0 = Math.max(0, Math.floor(a)), i1 = Math.min(n - 1, Math.ceil(a + per));
@@ -299,7 +316,6 @@
     const idx = ms => ms >= b.t[n - 1] + tfMs ? n - 1 + Math.floor((ms - b.t[n - 1]) / tfMs) : upto(b.t, ms);
     geo = { L, R, T, BOT, W, H, cw, lo, hi, n, x, y, xt: ms => x(idx(ms)), idx,
             inv: py => hi - (py - T) / (H - T - BOT) * (hi - lo), col: px => Math.floor(a + (px - L) / cw) };
-    // grid and axes
     ctx.strokeStyle = cssVar("--line"); ctx.fillStyle = cssVar("--muted"); ctx.font = "11px system-ui"; ctx.lineWidth = 1;
     for (let k = 0; k <= 7; k++) {
       const p = lo + (hi - lo) * (k + 0.5) / 8, yy = y(p);
@@ -313,8 +329,8 @@
       ctx.fillText(tf >= 1440 ? s.slice(0, 10) : s.slice(5, 16), Math.min(Math.max(x(i) - 34, L), W - R - 80), H - 8);
     }
     ctx.save(); ctx.beginPath(); ctx.rect(L, T, W - L - R, H - T - BOT); ctx.clip();
-    const vis = marks.map((m, k) => [m, k]).filter(([m]) => shown(m));
-    vis.forEach(([m, k]) => drawMark(m, k, false));
+    drawn = [];
+    marks.forEach((m, k) => drawMark(m, k, false));
     for (let i = i0; i <= i1; i++) {
       const up = b.c[i] >= b.o[i], xx = x(i), bw = Math.max(1, cw * 0.7);
       ctx.strokeStyle = cssVar("--wick"); ctx.beginPath(); ctx.moveTo(xx, y(b.h[i])); ctx.lineTo(xx, y(b.l[i])); ctx.stroke();
@@ -322,7 +338,7 @@
       const y1 = y(Math.max(b.o[i], b.c[i])), y2 = y(Math.min(b.o[i], b.c[i]));
       ctx.fillRect(xx - bw / 2, y1, bw, Math.max(1, y2 - y1));
     }
-    vis.forEach(([m, k]) => drawMark(m, k, true));
+    marks.forEach((m, k) => drawMark(m, k, true));
     if (tool === "select" && marks[sel]) handles(marks[sel]).forEach(hd => {
       ctx.fillStyle = cssVar("--sel");
       const [hx, hy] = hd.axis === "y" ? [(Math.max(hd.x1, L) + Math.min(hd.x2, W - R)) / 2, hd.y] : [hd.x, (hd.y1 + hd.y2) / 2];
@@ -341,15 +357,14 @@
       ctx.fillStyle = cssVar("--panel"); ctx.font = "11px system-ui"; ctx.fillText(fmt(p), W - R + 5, y(p) + 4);
     }
     if (active !== null) {
-      const s = setupOf(active);
-      ctx.font = "bold 12px system-ui"; ctx.fillStyle = cssVar(s.dir === "long" ? "--bull" : "--bear");
-      ctx.fillText(`Setup #${s.id} ${s.dir}` + (step ? ` · ${STEP_NAME[step]}` : ""), L + 6, T + 14);
+      const s = setupOf(active), done = STEPS.filter(st => marks.some(m => m.setup === active && m.step === st[0])).length;
+      ctx.font = "bold 12px system-ui"; ctx.fillStyle = cssVar(s.dir === "short" ? "--bear" : "--bull");
+      ctx.fillText(`Setup #${s.id}${s.dir ? " " + s.dir : ""} · ${done} / ${STEPS.length} steps`, L + 6, T + 14);
     }
     status();
   }
-  function shown(m) { return showAll || (active !== null && m.setup === active) || TF_MIN[m.tf] >= tf; }
   function color(m) {
-    if (m.kind === "range") return cssVar("--range");
+    if (m.kind === "range") return cssVar(m.subtype === "staircase" ? "--stair" : m.subtype === "wyckoff" ? "--wyck" : "--range");
     if (m.kind === "ob") return cssVar(m.dir === "bull" ? "--ob-bull" : "--ob-bear");
     if (m.kind === "fvg") return cssVar(m.dir === "bull" ? "--fvg-bull" : "--fvg-bear");
     if (m.kind === "liquidity") return cssVar("--liq");
@@ -358,7 +373,7 @@
     if (m.kind === "reaction") return cssVar("--reaction");
     return cssVar("--entry");
   }
-  let quiet = false;                                  // a lower timeframe's mark on a higher chart: no name
+  let quiet = false;                                  // a lower timeframe's mark on a higher chart: shape only, no name
   function label(text, px, py, c) { if (quiet) return; ctx.font = "bold 10.5px system-ui"; ctx.fillStyle = c; ctx.fillText(text, px + 3, py - 4); }
   function hline(x1, x2, yy, c, w, dash) { ctx.strokeStyle = c; ctx.lineWidth = w; ctx.setLineDash(dash || []);
     ctx.beginPath(); ctx.moveTo(x1, yy); ctx.lineTo(x2, yy); ctx.stroke(); ctx.setLineDash([]); }
@@ -366,23 +381,26 @@
     const g = geo, xs = g.xt(ts(m.start)) - g.cw / 2;
     let xe = m.end ? g.xt(ts(m.end) - 1) + g.cw / 2 : g.W;
     if (m.kind === "trade") { const o = m._out || {}; xe = o.exit ? g.xt(o.exit - 1) + g.cw / 2 : xs + 40 * g.cw; }
+    if (m.kind === "sweep" || m.kind === "structure") xe = g.xt(ts(m.end)) + g.cw / 2;
+    if (m.kind === "reaction") xe = xs + g.cw;
     return [xs, Math.max(xe, xs + g.cw)];
   }
   function drawMark(m, k, top) {
-    const g = geo, isSel = k === sel, c = isSel ? cssVar("--sel") : color(m), w = isSel ? 2.4 : 1.4;
+    const g = geo, isSel = k === sel, isHov = k === hov, c = isSel ? cssVar("--sel") : color(m), w = isSel || isHov ? 2.6 : 1.4;
     const [xs, xe] = span(m);
     if (xe < g.L || xs > g.W - g.R) return;
-    ctx.globalAlpha = active !== null && m.setup !== active ? 0.38 : 1;
-    quiet = top && !isSel && TF_MIN[m.tf] < tf;
+    if (top) drawn.push(m.id);
+    const base_a = active !== null && m.setup !== active ? 0.5 : 1;
+    ctx.globalAlpha = base_a;
+    quiet = top && !isSel && !isHov && m.kind !== "trade" && TF_MIN[m.tf] < tf;
     if (BOX.includes(m.kind)) {
       const y1 = g.y(m.top), y2 = g.y(m.bottom);
       if (!top) {
-        ctx.globalAlpha *= m.kind === "range" ? 0.10 : 0.17; ctx.fillStyle = c; ctx.fillRect(xs, y1, xe - xs, y2 - y1);
-        ctx.globalAlpha = active !== null && m.setup !== active ? 0.38 : 1;
-        ctx.strokeStyle = c; ctx.lineWidth = w; ctx.setLineDash(m.kind === "fvg" ? [5, 4] : []);
+        ctx.globalAlpha = base_a * (m.kind === "range" ? 0.11 : 0.17); ctx.fillStyle = c; ctx.fillRect(xs, y1, xe - xs, y2 - y1);
+        ctx.globalAlpha = base_a; ctx.strokeStyle = c; ctx.lineWidth = w; ctx.setLineDash(m.kind === "fvg" ? [5, 4] : []);
         ctx.strokeRect(xs, y1, xe - xs, y2 - y1); ctx.setLineDash([]);
       } else {
-        const name = m.kind === "range" ? `${m.subtype} ${m.dir === "none" ? "" : m.dir} ${m.tf}` : `${m.dir} ${m.kind.toUpperCase()} ${m.tf}`;
+        const name = m.kind === "range" ? `${m.subtype}${m.dir === "none" || !m.dir ? "" : " " + m.dir} ${m.tf}` : `${m.dir} ${m.kind.toUpperCase()} ${m.tf}`;
         label(name, Math.max(xs, g.L), y1, c);
         if (m.kind === "ob" && m.level !== undefined) hline(xs, xe, g.y(m.level), c, 1, [2, 3]);
       }
@@ -397,17 +415,16 @@
         : `${m.subtype} ${m.dir === "bull" ? "up" : "down"} ${m.tf}`;
       label(name, Math.max(x1, g.L), g.y(m.level) + ((m.kind === "sweep" ? m.dir === "low" : m.dir === "bear") ? 14 : 0), c);
     } else if (top && m.kind === "reaction") {
-      const xx = g.xt(ts(m.start)), yy = g.y(m.level) + (m.dir === "bull" ? 6 : -6), s = m.dir === "bull" ? 1 : -1;
-      ctx.fillStyle = c; ctx.beginPath(); ctx.moveTo(xx, yy); ctx.lineTo(xx - 6, yy + 10 * s); ctx.lineTo(xx + 6, yy + 10 * s); ctx.fill();
+      const xx = g.xt(ts(m.start)), yy = g.y(m.level) + (m.dir === "bull" ? 6 : -6), s = m.dir === "bull" ? 1 : -1, r = isSel || isHov ? 8 : 6;
+      ctx.fillStyle = c; ctx.beginPath(); ctx.moveTo(xx, yy); ctx.lineTo(xx - r, yy + 10 * s); ctx.lineTo(xx + r, yy + 10 * s); ctx.fill();
       label(`reaction ${m.tf}`, xx - 6, yy + (s === 1 ? 24 : -10), c);
     } else if (m.kind === "trade") {
       const o = m._out || (m._out = playOut(m)), xf = o.fill ? g.xt(o.fill) - g.cw / 2 : xs;
       if (!top) {
         const ye = g.y(m.entry);
-        ctx.globalAlpha *= 0.14;
+        ctx.globalAlpha = base_a * 0.14;
         ctx.fillStyle = cssVar("--stop"); ctx.fillRect(xf, Math.min(ye, g.y(m.stop)), xe - xf, Math.abs(g.y(m.stop) - ye));
         ctx.fillStyle = cssVar("--target"); ctx.fillRect(xf, Math.min(ye, g.y(m.target)), xe - xf, Math.abs(g.y(m.target) - ye));
-        ctx.globalAlpha = 1;
       } else {
         hline(xs, xe, g.y(m.entry), isSel ? c : cssVar("--entry"), w, m.order === "market" ? [] : [4, 3]);
         hline(xs, xe, g.y(m.stop), isSel ? c : cssVar("--stop"), w);
@@ -423,17 +440,20 @@
     ctx.globalAlpha = 1; quiet = false;
   }
   function drawPending() {
-    const g = geo;
+    const g = geo, b = B();
     if (drag && drag.kind === "box" && drag.moved) {
       ctx.strokeStyle = cssVar("--accent"); ctx.setLineDash([3, 3]); ctx.lineWidth = 1.5;
       ctx.strokeRect(Math.min(drag.x0, drag.x1), Math.min(drag.y0, drag.y1), Math.abs(drag.x1 - drag.x0), Math.abs(drag.y1 - drag.y0));
       ctx.setLineDash([]);
     }
-    if ((tool === "sweep" || tool === "structure") && pending.length) {
-      const p = pending[0];
-      hline(g.xt(p.time), hover ? hover[0] : g.W, g.y(p.price), cssVar(tool === "sweep" ? "--sweep" : "--muted"), 1.2, [3, 3]);
+    if ((tool === "sweep" || tool === "structure") && hover && !drag) {      // where the click would go
+      const i = g.col(hover[0]);
+      if (i >= 0 && i < b.t.length) {
+        const side = nearSide(i, hover[1]), level = side === "high" ? b.h[i] : b.l[i], j = firstBreak(i, side, level, tool === "structure");
+        hline(g.x(i), j >= 0 ? g.x(j) : g.W, g.y(level), cssVar(tool === "sweep" ? "--sweep" : "--muted"), 1.2, [3, 3]);
+      }
     }
-    if (tool === "trade" && hover) {
+    if ((tool === "trade" || tool === "half") && hover) {
       const ps = trdPrices(snapPrice(g.col(hover[0]), hover[1]));
       ["entry", "stop", "target"].forEach((k, i) => {
         if (ps[i] === undefined) return;
@@ -444,42 +464,35 @@
     }
   }
   function trdPrices(cursor) {          // entry, stop, target from the clicks so far plus the cursor
-    const p = pending.map(q => q.price).concat([cursor]);
-    if ($("otype").value === "half" && p.length >= 2) return [(p[0] + p[1]) / 2, p[1], p[2]];
-    return p;
+    const p = pending.map(q => q.price), half = tool === "half", tp = half ? opt.htp : opt.tp;
+    const entryOf = (p0, st) => half ? (p0 + st) / 2 : p0;
+    if (!p.length) return [cursor];
+    if (p.length === 1) {
+      const en = entryOf(p[0], cursor);
+      return tp === "click" ? [en, cursor] : [en, cursor, en + Math.sign(en - cursor) * (+tp) * Math.abs(en - cursor)];
+    }
+    return [entryOf(p[0], p[1]), p[1], cursor];
   }
   function status() {
-    const count = k => marks.filter(m => m.kind === k).length, b = B();
-    let s = `${TF_NAME[tf]} · ${setups.length} setups · ranges ${count("range")} · OBs ${count("ob")} · FVGs ${count("fvg")} · ` +
-      `liquidity ${count("liquidity")} · sweeps ${count("sweep")} · structure ${count("structure")} · reactions ${count("reaction")} · trades ${count("trade")}`;
+    const b = B(), count = k => marks.filter(m => m.kind === k).length;
+    let s = `${TF_NAME[tf]} · ${setups.length} setups · ${marks.length} marks (ranges ${count("range")}, OBs ${count("ob")}, ` +
+      `FVGs ${count("fvg")}, sweeps ${count("sweep")}, BOS ${count("structure")}, trades ${count("trade")})`;
     if (hover && geo) {
       const i = geo.col(hover[0]);
       if (i >= 0 && i < b.t.length) s = `${iso(b.t[i]).slice(0, 16)} UTC  O ${fmt(b.o[i])}  H ${fmt(b.h[i])}  L ${fmt(b.l[i])}  C ${fmt(b.c[i])}   ·   ` + s;
     }
     $("status").textContent = s;
+    const trade = ["Click the ENTRY on the candle it fills on.", "Click the STOP.", "Click the TAKE-PROFIT."];
     const hints = {
-      select: "Drag to scroll, wheel to zoom, double-click a candle to zoom into it. Click a mark to select it.",
-      range: "Drag over the range's candles.", ob: "Click the order block candle, or drag a zone.",
-      fvg: "Click the middle candle of the three, or drag the gap.", liquidity: "Click the swing high or low.",
-      sweep: pending.length ? "Now click the candle that took it." : "Click the swing high or low that was taken.",
-      structure: pending.length ? "Now click the candle that closed through it." : "Click the swing high or low that gets broken.",
-      reaction: "Click the candle that reacted (near its low for a bounce, its high for a rejection).",
-      trade: $("otype").value === "half"
-        ? ["Click the candle that closes the break (its close is the trigger).", "Click the STOP.", "Click the TAKE-PROFIT."][pending.length]
-        : $("otype").value === "market" ? ["Click the candle you enter on (at its close).", "Click the STOP.", "Click the TAKE-PROFIT."][pending.length]
-        : ["Click the ENTRY on the candle that fills it.", "Click the STOP.", "Click the TAKE-PROFIT."][pending.length],
+      select: hov >= 0 ? "Click to select · double-click or right-click to delete" : "",
+      pause: "Drag over the pause range's candles.", staircase: "Drag over the staircase's candles.", wyckoff: "Drag over the Wyckoff range's candles.",
+      ob: "Click the order block candle (or drag a zone).", fvg: "Click the middle candle of the three (or drag the gap).",
+      liquidity: "Click the swing high or low.", sweep: "Click the swing high or low that gets swept.",
+      structure: `Click the swing high or low that gets broken (${opt.stype}).`, reaction: "Click the candle that reacted.",
+      trade: opt.order === "market" ? ["Click the candle you enter on (at its close).", "Click the STOP.", "Click the TAKE-PROFIT."][pending.length] : trade[pending.length],
+      half: ["Click the candle that closes the break (its close is the trigger).", "Click the STOP.", "Click the TAKE-PROFIT."][pending.length],
     };
     if (!flashing) $("hint").textContent = hints[tool] || "";
-    const m = marks[sel];
-    $("selbar").classList.toggle("show", !!m);
-    if (m) {
-      const what = { range: `${m.subtype} range`, ob: `${m.dir} order block`, fvg: `${m.dir} FVG`, liquidity: m.dir === "high" ? "buy-side liquidity" : "sell-side liquidity",
-        sweep: `sweep of ${m.dir}s`, structure: `${m.subtype} ${m.dir === "bull" ? "up" : "down"}`, reaction: "reaction", trade: `${m.dir} trade` }[m.kind];
-      $("selname").textContent = `Selected: ${what} ${m.tf}` + (m.setup !== "" ? ` · setup #${m.setup}` : "");
-      $("selstep").disabled = m.setup === "";
-      $("selstep").value = m.step || "";
-      if (document.activeElement !== $("note")) $("note").value = m.note || "";
-    }
   }
   let flashing = null;
   function flash(text) { $("hint").textContent = text; clearTimeout(flashing); flashing = setTimeout(() => { flashing = null; status(); }, 2800); }
@@ -490,36 +503,70 @@
     if (!magnet) return raw;
     const cand = [];
     if (i >= 0 && i < b.t.length) cand.push(b.o[i], b.h[i], b.l[i], b.c[i]);
-    marks.forEach(m => { if (shown(m)) ["top", "bottom", "level", "entry", "stop", "target"].forEach(f => { if (m[f] !== undefined) cand.push(m[f]); }); });
+    marks.forEach(m => ["top", "bottom", "level", "entry", "stop", "target"].forEach(f => { if (m[f] !== undefined) cand.push(m[f]); }));
     let best = raw, d = 9;                                     // within 9 pixels
     cand.forEach(p => { const e = Math.abs(g.y(p) - py); if (e < d) { d = e; best = p; } });
     return best;
   }
+  function inferStep(m) {                                      // which step of the setup a mark is, from what and where
+    const t = TF_MIN[m.tf];
+    if (["ob", "fvg", "liquidity"].includes(m.kind)) return t >= 240 ? "htf_poi" : t >= 30 ? "h1_poi" : t >= 5 ? "m15_poi"
+      : { ob: "m1_ob", fvg: "m1_fvg", liquidity: "" }[m.kind];
+    if (m.kind === "reaction") return t >= 30 ? "h1_reaction" : "m15_reaction";
+    if (m.kind === "structure") return m.subtype === "breakout" ? "breakout" : t >= 5 ? "m15_structure" : "m1_bos";
+    if (m.kind === "range") {
+      if (t >= 15) return "htf_range";
+      if (t === 5) return "m5_range";
+      const before = marks.some(x => x.setup === m.setup && ts(x.start) < ts(m.start) &&
+                                     ((x.kind === "range" && TF_MIN[x.tf] === 1) || x.step === "breakout"));
+      return before ? "m1_range_2" : "m1_range";
+    }
+    return m.kind === "sweep" ? "sweep" : m.kind === "trade" ? "trade" : "";
+  }
   function add(m) {
-    m.id = nextId++; m.tf = TF_NAME[tf]; m.setup = active === null ? "" : active; m.step = active === null ? "" : step; m.note = m.note || "";
-    if (m.kind === "trade") m._out = playOut(m);
-    marks.push(m); sel = marks.length - 1; refreshSetups(); save(); draw();
+    remember();
+    m.id = nextId++; m.tf = m.tf || TF_NAME[tf]; m.setup = active === null ? "" : active; m.note = m.note || "";
+    m.step = active === null ? "" : inferStep(m);
+    if (m.kind === "trade") {
+      m._out = playOut(m);
+      const s = setupOf(active); if (s && !s.dir) { s.dir = m.dir; applySide(s); }   // a setup takes its trade's direction
+    }
+    marks.push(m); sel = marks.length - 1; lastMade = Date.now(); pending = [];
+    if (!lockTool) setTool("select");
+    changed();
     return m;
   }
-  function setupSide() { const s = setupOf(active); return s ? (s.dir === "long" ? 1 : -1) : 0; }
+  function setupSide() { const s = setupOf(active); return s && s.dir ? (s.dir === "long" ? 1 : -1) : 0; }
+  function applySide(s) {                                          // zones marked before the setup had a side: bull for long, bear for short
+    marks.forEach(m => { if (m.setup === s.id && m.autoDir && s.dir) m.dir = s.dir === "long" ? "bull" : "bear"; });
+  }
   function zoneDir(i, top, bottom) {
-    const v = $("zdir").value, b = B(); if (v !== "auto") return v;
+    if (opt.zdir !== "auto") return opt.zdir;
     if (setupSide()) return setupSide() === 1 ? "bull" : "bear";
-    const later = b.c[Math.min(i + 10, b.t.length - 1)];          // price moved away up = demand below = bullish
+    const b = B(), later = b.c[Math.min(i + 10, b.t.length - 1)];  // price moved away up = demand below = bullish
     if (later > top) return "bull";
     if (later < bottom) return "bear";
     return b.c[i] < b.o[i] ? "bull" : "bear";                      // the last down candle before an up move = bullish OB
   }
-  function rangeDir() { const v = $("rdir").value; return v !== "auto" ? v : setupSide() === 1 ? "up" : setupSide() === -1 ? "down" : "none"; }
+  function rangeDir(kind, s, e, top, bottom) {
+    if (opt.rdir !== "auto") return opt.rdir;
+    if (setupSide()) return setupSide() === 1 ? "up" : "down";
+    const b = B();
+    if (kind === "staircase") return b.c[e] >= b.o[s] ? "up" : "down";
+    if (kind === "pause") return (top + bottom) / 2 >= b.c[Math.max(0, s - (e - s + 1))] ? "up" : "down";   // the move before it
+    return "none";                                                   // wyckoff: the breakout decides
+  }
   function nearSide(i, py) { const b = B(), p = geo.inv(py); return Math.abs(p - b.l[i]) < Math.abs(p - b.h[i]) ? "low" : "high"; }
   function onClick(px, py) {
     const b = B(), i = geo.col(px);
-    if (tool === "select") { sel = hit(px, py); draw(); return; }
+    if (tool === "select") { sel = hit(px, py); renderSel(); draw(); return; }
     if (i < 0 || i >= b.t.length) return flash("Click on a candle.");
     const t = b.t[i];
+    if (RANGES.includes(tool)) return flash("Drag over the range's candles.");
     if (tool === "ob") {
-      const dir = $("zdir").value !== "auto" ? $("zdir").value : setupSide() ? (setupSide() === 1 ? "bull" : "bear") : (b.c[i] < b.o[i] ? "bull" : "bear");
-      return add({ kind: "ob", dir, start: iso(t), end: "", top: b.h[i], bottom: b.l[i], level: b.o[i] });
+      const dir = opt.zdir !== "auto" ? opt.zdir : setupSide() ? (setupSide() === 1 ? "bull" : "bear") : (b.c[i] < b.o[i] ? "bull" : "bear");
+      return add({ kind: "ob", dir, start: iso(t), end: "", top: b.h[i], bottom: b.l[i], level: b.o[i],
+                   autoDir: opt.zdir === "auto" && !setupSide() && active !== null });
     }
     if (tool === "fvg") {
       if (i < 1 || i + 1 >= b.t.length) return flash("Click the middle candle of three.");
@@ -528,8 +575,8 @@
       return flash("No gap around that candle on this timeframe. Drag a box to draw it yourself.");
     }
     if (tool === "liquidity") {
-      const side = nearSide(i, py), m = { kind: "liquidity", dir: side, start: iso(t), level: side === "high" ? b.h[i] : b.l[i] };
-      m.tf = TF_NAME[tf]; m.end = takenAt(m);
+      const side = nearSide(i, py), m = { kind: "liquidity", dir: side, start: iso(t), level: side === "high" ? b.h[i] : b.l[i], tf: TF_NAME[tf] };
+      m.end = takenAt(m);
       return add(m);
     }
     if (tool === "reaction") {
@@ -537,35 +584,22 @@
       return add({ kind: "reaction", dir: side === "low" ? "bull" : "bear", start: iso(t), level: side === "low" ? b.l[i] : b.h[i] });
     }
     if (tool === "sweep" || tool === "structure") {
-      if (!pending.length) { const side = nearSide(i, py); pending = [{ time: t, price: side === "low" ? b.l[i] : b.h[i], side }]; draw(); return; }
-      const p = pending[0];
-      if (t <= p.time) return flash("Click a later candle.");
-      pending = [];
-      if (tool === "sweep") {
-        if (p.side === "low" ? b.l[i] >= p.price : b.h[i] <= p.price) flash("Note: that candle didn't trade beyond the level on this timeframe.");
-        return add({ kind: "sweep", dir: p.side, start: iso(p.time), end: iso(t), level: p.price });
-      }
-      if (p.side === "high" ? b.c[i] <= p.price : b.c[i] >= p.price) flash("Note: that candle didn't close beyond the level.");
-      return add({ kind: "structure", dir: p.side === "high" ? "bull" : "bear", subtype: $("stype").value, start: iso(p.time), end: iso(t), level: p.price });
+      const side = nearSide(i, py), level = side === "high" ? b.h[i] : b.l[i], j = firstBreak(i, side, level, tool === "structure");
+      if (j < 0) return flash(tool === "sweep" ? "Price never trades beyond that level on this chart." : "No candle closes beyond that level on this chart.");
+      if (tool === "sweep") return add({ kind: "sweep", dir: side, start: iso(t), end: iso(b.t[j]), level });
+      return add({ kind: "structure", dir: side === "high" ? "bull" : "bear", subtype: opt.stype, start: iso(t), end: iso(b.t[j]), level });
     }
-    if (tool === "trade") {
-      const order = $("otype").value;
-      if (!pending.length) {
-        pending.push({ i, time: t, price: order === "limit" ? snapPrice(i, py) : b.c[i] });
-        if (order === "limit" && !(b.l[i] <= pending[0].price && pending[0].price <= b.h[i]))
-          flash("That candle didn't trade at this price: the fill will be the first later touch.");
-        draw(); return;
-      }
+    if (tool === "trade" || tool === "half") {
+      const half = tool === "half", tp = half ? opt.htp : opt.tp;
+      if (!pending.length) { pending.push({ time: t, price: half || opt.order === "market" ? b.c[i] : snapPrice(i, py) }); draw(); return; }
       pending.push({ price: snapPrice(i, py) });
-      if (pending.length < 3) { draw(); return; }
-      const [p0, p1, p2] = pending.map(q => q.price), t0 = pending[0].time;
-      pending = [];
-      const entry = order === "half" ? (p0 + p1) / 2 : p0, stop = p1, target = p2;
-      const dir = entry > stop ? "long" : "short", d = dir === "long" ? 1 : -1;
-      if (entry === stop) { draw(); return flash("The stop can't be at the entry."); }
-      if ((target - entry) * d <= 0) { draw(); return flash("The take-profit must be on the other side of the entry from the stop."); }
-      return add({ kind: "trade", dir, order, subtype: order === "half" ? "momentum" : "sniper", start: iso(t0), entry, stop, target,
-                   level: order === "half" ? p0 : undefined });
+      if (pending.length < (tp === "click" ? 3 : 2)) { draw(); return; }
+      const p0 = pending[0].price, stop = pending[1].price, entry = half ? (p0 + stop) / 2 : p0;
+      if (entry === stop) { pending = pending.slice(0, 1); draw(); return flash("The stop can't be at the entry: click the stop again."); }
+      const d = entry > stop ? 1 : -1, target = tp === "click" ? pending[2].price : entry + d * (+tp) * Math.abs(entry - stop);
+      if ((target - entry) * d <= 0) { pending = pending.slice(0, 2); draw(); return flash("The take-profit must be on the other side of the entry: click it again."); }
+      return add({ kind: "trade", dir: d === 1 ? "long" : "short", order: half ? "half" : opt.order, subtype: half ? "momentum" : "sniper",
+                   start: iso(pending[0].time), entry, stop, target, level: half ? p0 : undefined });
     }
   }
   function onBox(d) {
@@ -573,37 +607,37 @@
     const s = Math.max(0, g.col(Math.min(d.x0, d.x1))), e = Math.min(n - 1, g.col(Math.max(d.x0, d.x1)));
     if (e < s) return;
     let top = g.inv(Math.min(d.y0, d.y1)), bottom = g.inv(Math.max(d.y0, d.y1));
-    if (tool === "range") {
+    if (RANGES.includes(tool)) {
       if (e - s < 2) return flash("A range needs at least 3 candles.");
       if (magnet) { top = Math.max(...b.h.slice(s, e + 1)); bottom = Math.min(...b.l.slice(s, e + 1)); }
-      return add({ kind: "range", subtype: $("rtype").value, dir: rangeDir(), start: iso(b.t[s]), end: iso(b.t[e] + tf * M), top, bottom });
+      return add({ kind: "range", subtype: tool, dir: rangeDir(tool, s, e, top, bottom), start: iso(b.t[s]), end: iso(b.t[e] + tf * M), top, bottom });
     }
-    return add({ kind: tool, dir: zoneDir(e, top, bottom), start: iso(b.t[s]), end: "", top, bottom });
+    if (tool === "ob" || tool === "fvg") return add({ kind: tool, dir: zoneDir(e, top, bottom), start: iso(b.t[s]), end: "", top, bottom,
+                                                      autoDir: opt.zdir === "auto" && !setupSide() && active !== null });
+    onClick(d.x0, d.y0);
   }
   function hit(px, py) {
     const g = geo, tol = 6;
+    if (!g) return -1;
     for (let k = marks.length - 1; k >= 0; k--) {
-      const m = marks[k]; if (!shown(m)) continue;
-      const [xs, xe] = span(m);
+      const m = marks[k], [xs, xe] = span(m);
       if (px < xs - tol || px > xe + tol) continue;
       if (BOX.includes(m.kind) && py >= g.y(m.top) - tol && py <= g.y(m.bottom) + tol) return k;
       if (["liquidity", "sweep", "structure"].includes(m.kind) && Math.abs(py - g.y(m.level)) < tol) return k;
-      if (m.kind === "reaction" && Math.abs(px - g.xt(ts(m.start))) < 8 && Math.abs(py - g.y(m.level)) < 22) return k;
+      if (m.kind === "reaction" && Math.abs(px - g.xt(ts(m.start))) < 9 && Math.abs(py - g.y(m.level)) < 24) return k;
       if (m.kind === "trade" && py >= Math.min(g.y(m.stop), g.y(m.target)) - tol && py <= Math.max(g.y(m.stop), g.y(m.target)) + tol) return k;
     }
     return -1;
   }
   function handles(m) {                       // the edges / lines of the selected mark you can drag
     const g = geo, [xs, xe] = span(m), hs = [];
-    const yl = (f) => ({ f, axis: "y", y: g.y(m[f]), x1: xs, x2: xe });
+    const yl = f => ({ f, axis: "y", y: g.y(m[f]), x1: xs, x2: xe });
     if (BOX.includes(m.kind)) {
       hs.push(yl("top"), yl("bottom"), { f: "start", axis: "x", x: xs, y1: g.y(m.top), y2: g.y(m.bottom) });
       hs.push({ f: "end", axis: "x", x: Math.min(xe, g.W - g.R - 6), y1: g.y(m.top), y2: g.y(m.bottom) });   // a live zone: drag it to end it
-    } else if (["liquidity", "sweep", "structure", "reaction"].includes(m.kind)) hs.push(yl("level"));
-    else if (m.kind === "trade") {
-      if (m.order !== "half") hs.push(yl("entry"));
-      hs.push(yl("stop"), yl("target"));
-    }
+    } else if (["liquidity", "reaction"].includes(m.kind)) hs.push(yl("level"));
+    else if (m.kind === "sweep" || m.kind === "structure") hs.push(yl("level"), { f: "end", axis: "x", x: g.xt(ts(m.end)), y1: g.y(m.level) - 10, y2: g.y(m.level) + 10 });
+    else if (m.kind === "trade") { if (m.order !== "half") hs.push(yl("entry")); hs.push(yl("stop"), yl("target")); }
     return hs.filter(h => h.axis === "x" || (h.y > g.T && h.y < g.H - g.BOT));
   }
   function handleAt(px, py) {
@@ -622,133 +656,192 @@
         m.dir = m.entry > m.stop ? "long" : "short"; m._out = playOut(m);
       }
     } else if (h.f === "start") { if (!m.end || b.t[i] < ts(m.end)) m.start = iso(b.t[i]); }
+    else if (m.kind === "sweep" || m.kind === "structure") { if (b.t[i] > ts(m.start)) m.end = iso(b.t[i]); }
     else if (b.t[i] + tf * M > ts(m.start)) m.end = iso(b.t[i] + tf * M);
     if (BOX.includes(m.kind) && m.top < m.bottom) [m.top, m.bottom] = [m.bottom, m.top];
   }
+  function delMark(k) {
+    if (k < 0 || !marks[k]) return;
+    remember();
+    marks.splice(k, 1); sel = -1; hov = -1;
+    flash("Deleted. Ctrl+Z brings it back.");
+    changed();
+  }
+
+  // ---------- undo ----------
+  const snapshot = () => JSON.stringify({ marks: marks.map(({ _out, ...m }) => m), setups, nextId, active });
+  function remember() { undoStack.push(snapshot()); if (undoStack.length > 300) undoStack.shift(); redoStack = []; }
+  function restoreSnap(s) {
+    const d = JSON.parse(s);
+    marks = d.marks; setups = d.setups; nextId = d.nextId; active = setupOf(d.active) ? d.active : null;
+    marks.forEach(m => { if (m.kind === "trade") m._out = playOut(m); });
+    sel = -1; hov = -1; changed();
+  }
+  function undo() { if (!undoStack.length) return flash("Nothing to undo."); redoStack.push(snapshot()); restoreSnap(undoStack.pop()); flash("Undone."); }
+  function redo() { if (!redoStack.length) return; undoStack.push(snapshot()); restoreSnap(redoStack.pop()); flash("Redone."); }
 
   // ---------- mouse and keys ----------
   const pt = e => { const r = cv.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
+  cv.addEventListener("contextmenu", e => e.preventDefault());
   cv.addEventListener("pointerdown", e => {
     if (!base) return;
-    const [px, py] = pt(e), h = handleAt(px, py);
+    const [px, py] = pt(e);
     cv.setPointerCapture(e.pointerId);
+    if (e.button === 1 || e.button === 2) { drag = { kind: "pan", x0: px, y0: py, a0: a, s0: yShift, moved: false, button: e.button }; return; }
+    const h = handleAt(px, py);
     if (px > geo.W - geo.R) drag = { kind: "yscale", y0: py, z0: yZoom };
-    else if (h) drag = { kind: "handle", h };
-    else if (tool === "select" || (e.button === 1)) drag = { kind: "pan", x0: px, y0: py, a0: a, s0: yShift, moved: false };
+    else if (h) drag = { kind: "handle", h, moved: false };
+    else if (tool === "select") drag = { kind: "pan", x0: px, y0: py, a0: a, s0: yShift, moved: false, button: 0 };
     else drag = { kind: "box", x0: px, y0: py, x1: px, y1: py, moved: false };
   });
   cv.addEventListener("pointermove", e => {
     if (!base) return;
     const [px, py] = pt(e); hover = [px, py];
-    if (drag && drag.kind === "yscale") { yZoom = Math.max(0.05, Math.min(50, drag.z0 * Math.exp((py - drag.y0) / 150))); }
-    else if (drag && drag.kind === "handle") moveHandle(drag.h, px, py);
+    if (drag && drag.kind === "yscale") yZoom = Math.max(0.05, Math.min(50, drag.z0 * Math.exp((py - drag.y0) / 150)));
+    else if (drag && drag.kind === "handle") { if (!drag.moved) { remember(); drag.moved = true; } moveHandle(drag.h, px, py); }
     else if (drag && drag.kind === "pan") {
       drag.moved = drag.moved || Math.abs(px - drag.x0) + Math.abs(py - drag.y0) > 4;
       a = drag.a0 - (px - drag.x0) / geo.cw; clampView();
       if (yZoom !== 1 || yShift !== 0) yShift = drag.s0 + (py - drag.y0) / (geo.H - geo.T - geo.BOT) * (geo.hi - geo.lo);
     } else if (drag && drag.kind === "box") {
-      drag.x1 = px; drag.y1 = py; drag.moved = BOX.includes(tool) && Math.abs(px - drag.x0) + Math.abs(py - drag.y0) > 8;
-    }
+      drag.x1 = px; drag.y1 = py; drag.moved = (RANGES.includes(tool) || tool === "ob" || tool === "fvg") && Math.abs(px - drag.x0) + Math.abs(py - drag.y0) > 8;
+    } else hov = hit(px, py);
     const hh = !drag && handleAt(px, py);
     cv.style.cursor = px > geo.W - geo.R ? "ns-resize" : hh ? (hh.axis === "y" ? "ns-resize" : "ew-resize")
-      : tool === "select" ? (drag ? "grabbing" : "grab") : "crosshair";
+      : tool !== "select" ? "crosshair" : drag ? "grabbing" : hov >= 0 ? "pointer" : "grab";
     redraw();
   });
-  cv.addEventListener("pointerleave", () => { hover = null; if (base) redraw(); });
+  cv.addEventListener("pointerleave", () => { hover = null; hov = -1; if (base) redraw(); });
   cv.addEventListener("pointerup", () => {
     if (!drag) return;
     const d = drag; drag = null;
-    if (d.kind === "handle") { refreshSteps(); save(); }
-    else if (d.kind === "pan") { if (!d.moved && tool === "select") onClick(d.x0, d.y0); else saveView(); }
-    else if (d.kind === "box") { if (d.moved) onBox(d); else onClick(d.x0, d.y0); }
+    if (d.kind === "handle") { if (d.moved) changed(); }
+    else if (d.kind === "pan") {
+      if (d.moved) saveView();
+      else if (d.button === 2) delMark(hit(d.x0, d.y0));            // right-click a mark: delete it
+      else if (d.button === 0 && tool === "select") onClick(d.x0, d.y0);
+    } else if (d.kind === "box") { if (d.moved) onBox(d); else onClick(d.x0, d.y0); }
     draw();
   });
   cv.addEventListener("dblclick", e => {
     if (!base) return;
     const [px, py] = pt(e);
     if (px > geo.W - geo.R) { yZoom = 1; yShift = 0; draw(); return; }
-    if (tool !== "select") return;
+    if (tool !== "select" || Date.now() - lastMade < 700) return;   // not the second click of a new mark
+    const k = hit(px, py);
+    if (k >= 0) return delMark(k);                                   // double-click a mark: delete it
     const b = B(), i = geo.col(px);
-    if (i >= 0 && i < b.t.length) zoomTF(-1, b.t[i] + tf * M / 2);   // the same candle, on the next lower timeframe
+    if (i >= 0 && i < b.t.length) zoomTF(-1, b.t[i] + tf * M / 2);   // the empty chart: zoom into that candle
   });
   cv.addEventListener("wheel", e => {
     if (!base) return; e.preventDefault();
     if (e.shiftKey || Math.abs(e.deltaX) > Math.abs(e.deltaY)) pan((e.deltaX || e.deltaY) / 40);
     else zoom(e.deltaY > 0 ? 1.12 : 1 / 1.12, pt(e)[0]);
   }, { passive: false });
+  const codeOf = h => /^\d$/.test(h) ? "Digit" + h : "Key" + h;
   document.addEventListener("keydown", e => {
-    if (!base || e.target.tagName === "INPUT" || e.target.tagName === "SELECT") return;
-    const k = e.key, at = hover && geo ? (() => { const b = B(), i = geo.col(hover[0]); return i >= 0 && i < b.t.length ? b.t[i] + tf * M / 2 : undefined; })() : undefined;
-    if (k === "ArrowRight") { e.preventDefault(); pan(e.shiftKey ? 1 : per / 5); }
+    if (["INPUT", "SELECT", "TEXTAREA"].includes(e.target.tagName)) return;
+    const k = e.key;
+    if ((e.ctrlKey || e.metaKey) && (k === "z" || k === "Z")) { e.preventDefault(); e.shiftKey ? redo() : undo(); return; }
+    if ((e.ctrlKey || e.metaKey) && (k === "y" || k === "Y")) { e.preventDefault(); redo(); return; }
+    if (e.ctrlKey || e.metaKey || e.altKey || !base) return;
+    const at = hover && geo ? (() => { const b = B(), i = geo.col(hover[0]); return i >= 0 && i < b.t.length ? b.t[i] + tf * M / 2 : undefined; })() : undefined;
+    const tl = TOOLS.find(t => codeOf(t[2]) === e.code);
+    if (k === "Escape") {                                            // cancel, then deselect, then close the setup
+      if (pending.length || tool !== "select") { pending = []; setTool("select"); }
+      else if (sel >= 0) { sel = -1; renderSel(); draw(); }
+      else if (active !== null) { active = null; changed(); flash("Setup closed: new marks are free examples."); }
+    } else if (tl) { setTool(tl[0]); setLock(e.shiftKey && tl[0] !== "select"); }
+    else if (e.code === "KeyN") newSetup();
+    else if (e.code === "KeyM") toggleMagnet();
+    else if (e.code === "KeyK") setLock(!lockTool);
+    else if (k === "Delete" || k === "Backspace") { e.preventDefault(); delMark(sel); }
+    else if (k === "ArrowRight") { e.preventDefault(); pan(e.shiftKey ? 1 : per / 5); }
     else if (k === "ArrowLeft") { e.preventDefault(); pan(e.shiftKey ? -1 : -per / 5); }
     else if (k === "PageDown") { e.preventDefault(); zoomTF(-1, at); }
     else if (k === "PageUp") { e.preventDefault(); zoomTF(1, at); }
     else if (k === "Home") { a = 0; clampView(); draw(); }
     else if (k === "End") { a = B().t.length - per * 0.85; clampView(); draw(); }
-    else if (k === "Escape") { setTool("select"); }
-    else if (k.length === 1 && "12345678".includes(k)) setTool(TOOLS[+k][0]);
-    else if (k === "Delete" || k === "Backspace") del();
     else if (k === "+" || k === "=") zoom(1 / 1.25);
     else if (k === "-") zoom(1.25);
-    else if (k === "m" || k === "M") toggleMagnet();
-    else if (k === "a" || k === "A") toggleAll();
   });
 
   // ---------- setups ----------
-  function refreshSetups() {
-    const s = $("setup");
-    s.innerHTML = `<option value="">No setup (free marking)</option>` + setups.map(x => {
-      const first = marks.filter(m => m.setup === x.id).map(m => ts(m.start)).sort((p, q) => p - q)[0];
-      return `<option value="${x.id}">#${x.id} ${x.dir}${first ? " · " + iso(first).slice(0, 16) : ""} · ${x.status}</option>`;
-    }).join("");
-    s.value = active === null ? "" : String(active);
-    const cur = setupOf(active);
-    $("setupopts").classList.toggle("show", !!cur);
-    if (cur) { $("sdir").value = cur.dir; $("sstatus").value = cur.status; if (document.activeElement !== $("snote")) $("snote").value = cur.note || ""; }
-    refreshSteps();
+  function newSetup() {
+    if (!base) return;
+    remember();
+    const s = { id: nextId++, dir: "", note: "" };
+    setups.push(s); active = s.id; sel = -1;
+    flash(`Setup #${s.id}: everything you mark now joins it. Pick long or short on the right (or it takes the trade's side).`);
+    changed();
   }
-  function refreshSteps() {
-    const box = $("steps");
-    box.classList.toggle("show", active !== null);
-    box.innerHTML = active === null ? "" : `<span class="lbl">Steps</span>` + STEPS.map(([key, name, m], k) => {
-      const done = marks.some(x => x.setup === active && x.step === key);
-      return `<button data-step="${key}" class="${key === step ? "on" : ""} ${done ? "done" : ""}" title="${TF_NAME[m]}">${k + 1}. ${name}${done ? " ✓" : ""}</button>`;
-    }).join("");
-    box.querySelectorAll("button").forEach(btn => btn.onclick = () => { goStep(btn.dataset.step); btn.blur(); });
-    $("selstep").innerHTML = `<option value="">no step</option>` + STEPS.map(([key, name]) => `<option value="${key}">${name}</option>`).join("");
-    if (marks[sel]) $("selstep").value = marks[sel].step || "";
+  function setupResult(id) {
+    const tr = marks.filter(m => m.setup === id && m.kind === "trade");
+    if (!tr.length) return "no trade";
+    return tr.map(m => { const o = m._out || {}; return o.outcome === "target" ? `+${o.R.toFixed(1)}R` : o.outcome === "stop" ? "−1R" : o.outcome; }).join(", ");
   }
   function lastMarkTime(id) {
     const t = marks.filter(m => m.setup === id).map(m => Math.max(ts(m.start), m.end ? ts(m.end) - 1 : 0));
     return t.length ? Math.max(...t) : undefined;
   }
-  function goStep(key) {
-    const [, , m, t, opts] = STEPS.find(s => s[0] === key);
-    step = key;
-    if (opts.stype) $("stype").value = opts.stype;
-    if (opts.rtype) $("rtype").value = opts.rtype;
-    setTool(t);
-    setTF(m, lastMarkTime(active));                 // zoom to where the setup is
-    refreshSteps(); draw();
+  function stepClick(key) {
+    const m = marks.filter(x => x.setup === active && x.step === key).at(-1);
+    if (m) { sel = marks.indexOf(m); setTF(TF_MIN[m.tf], ts(m.start)); renderSel(); return; }
+    const [, , tfm, t] = STEPS.find(s => s[0] === key);
+    if (t === "structure") opt.stype = key === "breakout" ? "breakout" : "BOS";
+    setTool(t); setTF(tfm, lastMarkTime(active));
   }
-  function newSetup(dir) {
-    const s = { id: nextId++, dir, status: "trade", note: "" };
-    setups.push(s); active = s.id; sel = -1;
-    refreshSetups(); goStep(STEPS[0][0]); save();
+  function renderPanel() {
+    const cur = setupOf(active);
+    $("curname").textContent = cur ? `Setup #${cur.id}${cur.dir ? " · " + cur.dir : ""} · ${setupResult(cur.id)}` : "No setup: marks are kept as free examples (N starts a setup)";
+    $("curctl").hidden = !cur;
+    if (cur) {
+      document.querySelectorAll("#curctl [data-dir]").forEach(b => b.classList.toggle("on", b.dataset.dir === cur.dir));
+      if (document.activeElement !== $("snote")) $("snote").value = cur.note || "";
+    }
+    $("checklist").innerHTML = cur ? STEPS.map(([k, name]) => {
+      const done = marks.some(m => m.setup === cur.id && m.step === k);
+      return `<li data-step="${k}" class="${done ? "done" : ""}"><span class="tick">${done ? "✓" : "○"}</span>${name}</li>`;
+    }).join("") : "";
+    $("checklist").querySelectorAll("li").forEach(li => li.onclick = () => stepClick(li.dataset.step));
+    const free = marks.filter(m => m.setup === "").length;
+    $("slisthead").textContent = setups.length || free ? `All setups (${setups.length}) · free marks ${free}` : "";
+    $("slist").innerHTML = setups.slice().reverse().map(s => {
+      const t = marks.filter(m => m.setup === s.id).map(m => ts(m.start)).sort((p, q) => p - q)[0];
+      return `<div class="item ${s.id === active ? "on" : ""}" data-id="${s.id}"><span>#${s.id} ${s.dir || "–"}${t ? " · " + iso(t).slice(5, 16) : ""} · ${setupResult(s.id)}</span>` +
+             `<button data-del="${s.id}" title="Delete this setup and its marks">×</button></div>`;
+    }).join("");
+    $("slist").querySelectorAll(".item").forEach(el => el.onclick = e => {
+      const id = +el.dataset.id;
+      if (e.target.dataset.del) {
+        if (!confirm(`Delete setup #${id} and its ${marks.filter(m => m.setup === id).length} marks? (Ctrl+Z undoes it)`)) return;
+        remember(); marks = marks.filter(m => m.setup !== id); setups = setups.filter(s => s.id !== id);
+        if (active === id) active = null;
+        sel = -1; changed(); return;
+      }
+      active = id; sel = -1;
+      const t = lastMarkTime(id); if (t !== undefined) centerOn(t);
+      renderPanel(); draw();
+    });
+    $("undo").disabled = !undoStack.length;
+    renderSel();
   }
-  $("newlong").onclick = () => base && newSetup("long");
-  $("newshort").onclick = () => base && newSetup("short");
-  $("setup").onchange = () => { active = $("setup").value === "" ? null : +$("setup").value; step = ""; sel = -1; refreshSetups();
-    const t = lastMarkTime(active); if (t !== undefined) { centerOn(t); } draw(); };
-  $("sdir").onchange = () => { setupOf(active).dir = $("sdir").value; refreshSetups(); save(); draw(); };
-  $("sstatus").onchange = () => { setupOf(active).status = $("sstatus").value; refreshSetups(); save(); };
-  $("snote").oninput = () => { setupOf(active).note = $("snote").value; save(); };
-  $("sgo").onclick = () => { const t = lastMarkTime(active); if (t !== undefined) { centerOn(t); draw(); } };
-  $("sdel").onclick = () => {
-    if (!confirm(`Delete setup #${active} and its ${marks.filter(m => m.setup === active).length} marks?`)) return;
-    marks = marks.filter(m => m.setup !== active); setups = setups.filter(s => s.id !== active); active = null; step = ""; sel = -1;
-    refreshSetups(); save(); draw();
-  };
+  function renderSel() {
+    const m = marks[sel];
+    $("selbar").classList.toggle("show", !!m);
+    if (!m) return;
+    const what = { range: `${m.subtype} range`, ob: `${m.dir} order block`, fvg: `${m.dir} FVG`, liquidity: m.dir === "high" ? "buy-side liquidity" : "sell-side liquidity",
+      sweep: `sweep of ${m.dir}s`, structure: `${m.subtype} ${m.dir === "bull" ? "up" : "down"}`, reaction: "reaction", trade: `${m.dir} trade` }[m.kind];
+    $("selname").textContent = `Selected: ${what} ${m.tf}` + (m.setup !== "" ? ` · setup #${m.setup}` : " · free example");
+    $("selstep").innerHTML = `<option value="">no step</option>` + Object.entries(STEP_NAME).map(([k, n]) => `<option value="${k}">${n}</option>`).join("");
+    $("selstep").value = m.step || ""; $("selstep").disabled = m.setup === "";
+    if (document.activeElement !== $("note")) $("note").value = m.note || "";
+  }
+  $("newsetup").onclick = newSetup;
+  $("enddone").onclick = () => { active = null; changed(); };
+  document.querySelectorAll("#curctl [data-dir]").forEach(b => b.onclick = () => { const s = setupOf(active); if (!s) return; remember(); s.dir = b.dataset.dir; applySide(s); changed(); });
+  $("snote").onfocus = () => remember();
+  $("snote").oninput = () => { const s = setupOf(active); if (s) { s.note = $("snote").value; saveSoon(); } };
 
   // ---------- saving ----------
   const COLS = ["id", "setup", "step", "kind", "tf", "dir", "subtype", "start", "end", "top", "bottom", "level",
@@ -756,7 +849,7 @@
   function toCSV() {
     const q = v => { if (v === undefined || v === null) return ""; const s = typeof v === "number" ? String(+v.toPrecision(10)) : String(v);
       return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
-    const rows = setups.map(s => ({ id: s.id, kind: "setup", dir: s.dir, subtype: s.status, note: s.note }))
+    const rows = setups.map(s => ({ id: s.id, kind: "setup", dir: s.dir, subtype: marks.some(m => m.setup === s.id && m.kind === "trade") ? "trade" : "no trade", note: s.note }))
       .concat(marks.map(m => ({ ...m, outcome: m._out ? m._out.outcome : "", R: m._out ? +m._out.R.toFixed(3) : "" })));
     return [COLS.join(",")].concat(rows.map(r => COLS.map(c => q(r[c])).join(","))).join("\n") + "\n";
   }
@@ -767,86 +860,173 @@
         if (inq) { if (ch === '"' && line[i + 1] === '"') { s += '"'; i++; } else if (ch === '"') inq = false; else s += ch; }
         else if (ch === '"') inq = true; else if (ch === ",") { out.push(s); s = ""; } else s += ch; }
       out.push(s); return out; };
-    const head = split(lines[0]);
+    const head = split(lines[0] || "");
     marks = []; setups = []; nextId = 1;
     for (let k = 1; k < lines.length; k++) {
       const f = split(lines[k]), r = {}; head.forEach((h, i) => r[h] = f[i] ?? "");
       const id = +r.id; nextId = Math.max(nextId, id + 1);
-      if (r.kind === "setup") { setups.push({ id, dir: r.dir, status: r.subtype || "trade", note: r.note || "" }); continue; }
+      if (r.kind === "setup") { setups.push({ id, dir: r.dir || "", note: r.note || "" }); continue; }
       const m = { id, setup: r.setup === "" ? "" : +r.setup, step: r.step || "", kind: r.kind, tf: r.tf, dir: r.dir, subtype: r.subtype,
                   start: r.start.slice(0, 19), end: (r.end || "").slice(0, 19), order: r.order, note: r.note || "" };
       ["top", "bottom", "level", "entry", "stop", "target"].forEach(c => m[c] = num(r[c]));
       if (m.kind === "trade" && base) m._out = playOut(m);
       marks.push(m);
     }
-    if (!setupOf(active)) { active = null; step = ""; }
-    sel = -1;
+    if (!setupOf(active)) active = null;
+    sel = -1; hov = -1;
   }
   const key = k => "smcLabeller2." + fileKey + "." + k;
-  function save() { if (fileKey) try { localStorage.setItem(key("labels"), toCSV()); } catch (e) {} }
-  function saveView() { if (fileKey) try { localStorage.setItem(key("view"), JSON.stringify({ tf, t: centerTime(), per })); } catch (e) {} }
-  function restore() {
+  let saveTimer = null;
+  function changed() { dirty = true; renderPanel(); saveSoon(); draw(); }
+  function saveSoon() { clearTimeout(saveTimer); saveTimer = setTimeout(saveNow, 300); }
+  async function saveNow() {
+    if (!fileKey) return;
+    const text = toCSV(); let ok = false; saveError = null;
+    if (storageOK) try { localStorage.setItem(key("labels"), text); ok = true; } catch (e) { saveError = "this browser's storage is full: use Save to file"; }
+    if (fileHandle) {
+      try { const w = await fileHandle.createWritable(); await w.write(text); await w.close(); ok = true; }
+      catch (e) { saveError = `couldn't write ${fileHandle.name} (${e.name}): press Save to file again`; }
+    }
+    if (!storageOK && !fileHandle) saveError = "this window can't keep your marks: press Save to file, or open the page in Chrome";
+    if (ok && !saveError) { dirty = false; savedAt = new Date(); }
+    renderSaved();
+  }
+  function renderSaved() {
+    const el = $("saved");
+    el.className = saveError ? "warn" : "";
+    if (saveError) el.textContent = "⚠ " + saveError;
+    else {
+      const where = [storageOK ? "this browser" : "", fileHandle ? fileHandle.name : ""].filter(Boolean).join(" + ");
+      el.textContent = savedAt ? `✓ saved ${savedAt.toTimeString().slice(0, 8)} · ${where}` : "";
+    }
+    $("savefile").textContent = fileHandle ? `Saving to ${fileHandle.name}` : pendingLabels ? `Reconnect ${pendingLabels.name}` : "Save to file…";
+  }
+  function saveView() { if (fileKey && storageOK) try { localStorage.setItem(key("view"), JSON.stringify({ tf, t: centerTime(), per })); } catch (e) {} }
+  // file handles kept between visits (Chrome / Edge), so "Reopen" can bring them back
+  const idb = {
+    open() { return this.p || (this.p = new Promise((res, rej) => { const r = indexedDB.open("smcLabeller", 1);
+      r.onupgradeneeded = () => r.result.createObjectStore("h"); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); })); },
+    async get(k) { try { const db = await this.open(); return await new Promise(res => { const q = db.transaction("h").objectStore("h").get(k);
+      q.onsuccess = () => res(q.result); q.onerror = () => res(undefined); }); } catch (e) { return undefined; } },
+    async set(k, v) { try { const db = await this.open(); await new Promise((res, rej) => { const q = db.transaction("h", "readwrite").objectStore("h").put(v, k);
+      q.onsuccess = res; q.onerror = () => rej(q.error); }); return true; } catch (e) { return false; } },
+  };
+  async function loadPrices(file, handle) {
+    const d = parseCSV(decode(await file.arrayBuffer()));
+    if (!d.t.length) { $("status").textContent = "Couldn't read that file. Expected time (or date + time) and open, high, low, close columns."; return; }
+    base = d; fileKey = file.name; for (const k in full) delete full[k];
+    const gaps = []; for (let i = 1; i < Math.min(d.t.length, 3000); i++) gaps.push(d.t[i] - d.t[i - 1]);
+    gaps.sort((p, q) => p - q); baseMin = Math.max(1, Math.round((gaps[gaps.length >> 1] || M) / M)); dayBars = Math.round(1440 / baseMin);
+    marks = []; setups = []; nextId = 1; active = null; sel = -1; hov = -1; undoStack = []; redoStack = [];
+    fileHandle = null; savedAt = null; saveError = null; dirty = false;
     let text = null, view = null;
-    try { text = localStorage.getItem(key("labels")); view = JSON.parse(localStorage.getItem(key("view"))); } catch (e) {}
+    if (storageOK) try { text = localStorage.getItem(key("labels")); view = JSON.parse(localStorage.getItem(key("view"))); } catch (e) {}
     if (text) fromCSV(text);
     if (view) { per = view.per || per; setTF(view.tf || 60, view.t); }
-    else { setTF(240); a = B().t.length - per * 0.85; clampView(); }      // first time: the latest H4 candles
+    else { setTF(240); a = B().t.length - per * 0.85; clampView(); }
+    if (handle) await idb.set("prices", handle);
+    pendingLabels = (await idb.get("labels:" + fileKey)) || null;
+    if (!storageOK && !pendingLabels) saveError = "this window can't keep your marks: press Save to file, or open the page in Chrome";
+    renderPanel(); renderSaved(); draw();
   }
+  async function connectLabels(h, readIt) {
+    if (h.requestPermission && (await h.requestPermission({ mode: "readwrite" })) !== "granted") return flash("No permission for that file.");
+    fileHandle = h; pendingLabels = null;
+    if (readIt) {
+      const text = await (await h.getFile()).text();
+      if (text.trim() && !marks.length) { fromCSV(text); flash(`Loaded ${marks.length} marks from ${h.name}.`); }
+    }
+    await idb.set("labels:" + fileKey, h);
+    saveError = null; await saveNow(); renderPanel(); draw();
+  }
+  $("openprices").onclick = async () => {
+    if (window.showOpenFilePicker) {
+      try { const [h] = await showOpenFilePicker({ types: [{ description: "Prices (CSV)", accept: { "text/csv": [".csv", ".txt"] } }] });
+            await loadPrices(await h.getFile(), h); } catch (e) { if (e.name !== "AbortError") flash("Couldn't open that file."); }
+    } else $("csv").click();
+  };
+  $("csv").onchange = async e => { const f = e.target.files[0]; if (f) await loadPrices(f, null); };
+  $("reopen").onclick = async () => {
+    const h = await idb.get("prices"); if (!h) return;
+    try {
+      if (h.requestPermission && (await h.requestPermission({ mode: "read" })) !== "granted") return flash("No permission for the prices file.");
+      await loadPrices(await h.getFile(), h);
+      if (pendingLabels) await connectLabels(pendingLabels, true);
+    } catch (e) { flash("Couldn't reopen the files: open them again."); }
+  };
+  $("savefile").onclick = async () => {
+    if (!base) return;
+    if (pendingLabels) return connectLabels(pendingLabels, true);
+    if (!window.showSaveFilePicker) { exportCSV(); return flash("This browser can't keep saving into a file: export regularly (Chrome / Edge can)."); }
+    try {
+      const h = await showSaveFilePicker({ suggestedName: `labels_${fileKey.replace(/\.[^.]*$/, "")}.csv`,
+                                           types: [{ description: "Labels (CSV)", accept: { "text/csv": [".csv"] } }] });
+      await connectLabels(h, false);
+      flash(`Every change now goes into ${h.name} too.`);
+    } catch (e) { if (e.name !== "AbortError") flash("Couldn't use that file."); }
+  };
+  function exportCSV() {
+    const el = document.createElement("a");
+    el.href = URL.createObjectURL(new Blob([toCSV()], { type: "text/csv" }));
+    el.download = `labels_${fileKey.replace(/\.[^.]*$/, "")}.csv`; el.click();
+  }
+  $("export").onclick = () => base && exportCSV();
+  $("labels").onchange = async e => {
+    const f = e.target.files[0]; e.target.value = ""; if (!f) return; if (!base) return flash("Open the prices first.");
+    if (marks.length && !confirm(`Replace the ${marks.length} marks on the chart with the ones in ${f.name}? (Ctrl+Z undoes it)`)) return;
+    remember(); fromCSV(await f.text()); changed(); flash(`Loaded ${marks.length} marks from ${f.name}.`);
+  };
+  window.addEventListener("beforeunload", e => { if (dirty) { e.preventDefault(); e.returnValue = ""; } });
 
   // ---------- controls ----------
   function setTool(t) {
     tool = t; pending = [];
-    document.querySelectorAll("#tools button").forEach(b => b.classList.toggle("on", b.dataset.tool === t));
-    $("opt-range").classList.toggle("show", t === "range");
-    $("opt-zone").classList.toggle("show", t === "ob" || t === "fvg");
-    $("opt-structure").classList.toggle("show", t === "structure");
-    $("opt-trade").classList.toggle("show", t === "trade");
+    document.querySelectorAll("#tools button[data-tool]").forEach(b => b.classList.toggle("on", b.dataset.tool === t));
+    renderOpts();
     if (base) draw();
   }
-  const del = () => { if (sel >= 0) { marks.splice(sel, 1); sel = -1; refreshSetups(); save(); draw(); } };
+  function setLock(v) { lockTool = v; $("lock").classList.toggle("on", lockTool); renderOpts(); }
+  function renderOpts() {
+    const seg = (k, vals, names) => `<span class="group">` + vals.map((v, i) =>
+      `<button data-opt="${k}" data-val="${v}" class="${opt[k] === v ? "on" : ""}">${names ? names[i] : v}</button>`).join("") + `</span>`;
+    let h;
+    if (RANGES.includes(tool)) h = `<span class="lbl">Direction</span>` + seg("rdir", ["auto", "up", "down", "none"]);
+    else if (tool === "ob" || tool === "fvg") h = `<span class="lbl">Side</span>` + seg("zdir", ["auto", "bull", "bear"]);
+    else if (tool === "structure") h = seg("stype", ["BOS", "CHoCH", "breakout"]);
+    else if (tool === "trade") h = `<span class="lbl">Order</span>` + seg("order", ["limit", "market"]) +
+      `<span class="lbl">Take-profit</span>` + seg("tp", ["12", "10", "5", "3", "click"], ["12R", "10R", "5R", "3R", "click it"]);
+    else if (tool === "half") h = `<span class="lbl">Take-profit</span>` + seg("htp", ["10", "12", "5", "click"], ["10R", "12R", "5R", "click it"]);
+    else h = `<span class="lbl">Drag to scroll · wheel to zoom · double-click or right-click a mark to delete it · double-click the chart to zoom into a candle · Ctrl+Z undo</span>`;
+    if (tool !== "select") h += `<span class="lbl">${lockTool ? "· tool kept (K to release)" : "· one mark, then back to the cursor (Shift + key keeps the tool)"}</span>`;
+    $("opts").innerHTML = h;
+    $("opts").querySelectorAll("[data-opt]").forEach(b => b.onclick = () => { opt[b.dataset.opt] = b.dataset.val; renderOpts(); if (base) draw(); });
+  }
   function toggleMagnet() { magnet = !magnet; $("magnet").classList.toggle("on", magnet); if (base) draw(); }
-  function toggleAll() { showAll = !showAll; $("showall").classList.toggle("on", showAll); if (base) draw(); }
   $("tfs").innerHTML = TFS.map(m => `<button data-tf="${m}">${TF_NAME[m]}</button>`).join("");
   document.querySelectorAll("#tfs button").forEach(b => b.onclick = () => base && setTF(+b.dataset.tf));
-  $("tools").innerHTML = TOOLS.map(([k, name, key]) => `<button data-tool="${k}" title="${key}">${name}</button>`).join("");
-  document.querySelectorAll("#tools button").forEach(b => b.onclick = () => setTool(b.dataset.tool));
-  $("zin").onclick = () => base && zoom(1 / 1.25); $("zout").onclick = () => base && zoom(1.25);
-  $("magnet").onclick = toggleMagnet; $("showall").onclick = toggleAll;
-  $("del").onclick = del;
-  $("note").oninput = () => { if (marks[sel]) { marks[sel].note = $("note").value; save(); } };
-  $("selstep").onchange = () => { const m = marks[sel]; if (m && m.setup !== "") { m.step = $("selstep").value; refreshSteps(); save(); draw(); } };
-  $("otype").onchange = () => { pending = []; if (base) draw(); };
+  $("tools").innerHTML = TOOLS.map(([k, name, hk]) => `<button data-tool="${k}" title="${name} (${hk})"><span>${name}</span><kbd>${hk}</kbd></button>`).join("") +
+    `<button id="lock" class="lockrow" title="K: keep the tool after each mark"><span>Keep tool</span><kbd>K</kbd></button>`;
+  document.querySelectorAll("#tools button[data-tool]").forEach(b => b.onclick = e => { setTool(b.dataset.tool); setLock(e.shiftKey && b.dataset.tool !== "select"); });
+  $("lock").onclick = () => setLock(!lockTool);
+  $("magnet").onclick = toggleMagnet;
+  $("undo").onclick = undo;
+  $("del").onclick = () => delMark(sel);
+  $("note").onfocus = () => remember();
+  $("note").oninput = () => { if (marks[sel]) { marks[sel].note = $("note").value; saveSoon(); } };
+  $("selstep").onchange = () => { const m = marks[sel]; if (m && m.setup !== "") { remember(); m.step = $("selstep").value; changed(); } };
   $("go").onclick = () => { if (base && $("date").value) { centerOn(Date.parse($("date").value + ":00Z")); saveView(); draw(); } };
-  $("export").onclick = () => {
-    if (!base) return;
-    const el = document.createElement("a");
-    el.href = URL.createObjectURL(new Blob([toCSV()], { type: "text/csv" }));
-    el.download = `labels_${fileKey.replace(/\.[^.]*$/, "")}.csv`; el.click();
-  };
   $("theme").onclick = () => { const r = document.documentElement, dark = matchMedia("(prefers-color-scheme: dark)").matches;
     const c = r.dataset.theme || (dark ? "dark" : "light"); r.dataset.theme = c === "dark" ? "light" : "dark"; if (base) draw(); };
-  $("csv").onchange = async e => {
-    const f = e.target.files[0]; if (!f) return;
-    const d = parseCSV(decode(await f.arrayBuffer()));
-    if (!d.t.length) { $("status").textContent = "Couldn't read that file. Expected time (or date + time) and open, high, low, close columns."; return; }
-    base = d; fileKey = f.name; for (const k in full) delete full[k];
-    const gaps = []; for (let i = 1; i < Math.min(d.t.length, 3000); i++) gaps.push(d.t[i] - d.t[i - 1]);
-    gaps.sort((p, q) => p - q); baseMin = Math.max(1, Math.round((gaps[gaps.length >> 1] || M) / M)); dayBars = Math.round(1440 / baseMin);
-    marks = []; setups = []; nextId = 1; active = null; step = ""; sel = -1;
-    restore(); refreshSetups(); draw();
-  };
-  $("labels").onchange = async e => {
-    const f = e.target.files[0]; if (!f) return; if (!base) return flash("Load the prices first.");
-    fromCSV(await f.text()); refreshSetups(); save(); draw();
-  };
-  document.querySelectorAll("button, select").forEach(b => b.addEventListener(b.tagName === "SELECT" ? "change" : "click", () => b.blur()));
+  document.addEventListener("click", e => { const b = e.target.closest && e.target.closest("button"); if (b) b.blur(); });
+  document.addEventListener("change", e => { if (e.target.tagName === "SELECT") e.target.blur(); });
   window.addEventListener("resize", () => base && draw());
-  setTool("select"); refreshSetups(); draw();
+  idb.get("prices").then(h => { if (h && h.name) { $("reopen").hidden = false; $("reopen").textContent = `Reopen ${h.name}`; } });
+  setTool("select"); renderPanel(); draw();
   // for the tests
-  window.__labeller = { bars, toCSV, fromCSV: t => { fromCSV(t); refreshSetups(); draw(); }, setTF, centerOn, centerTime, draw,
-                        get geo() { return geo; }, get marks() { return marks; }, get setups() { return setups; },
-                        get tf() { return tf; }, get a() { return a; }, get per() { return per; },
-                        setPer: n => { per = n; clampView(); draw(); }, visible: () => marks.filter(shown), playOut };
+  window.__labeller = { bars, toCSV, fromCSV: t => { fromCSV(t); changed(); }, setTF, centerOn, centerTime, draw, playOut, saveNow,
+                        get geo() { return geo; }, get marks() { return marks; }, get setups() { return setups; }, get active() { return active; },
+                        get tf() { return tf; }, get a() { return a; }, get per() { return per; }, get tool() { return tool; },
+                        setPer: n => { per = n; clampView(); draw(); }, drawn: () => drawn.slice() };
 })();
 </script>
 </body>

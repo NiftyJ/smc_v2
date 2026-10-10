@@ -97,6 +97,12 @@ ms = lambda t: int(pd.Timestamp(t).value // 10**6)                              
 UNIT = {1440: "1D", 240: "4h", 60: "1h", 30: "30min", 15: "15min", 5: "5min", 1: "1min"}
 
 
+FAKE_FILES = """window.__files = {};
+window.showSaveFilePicker = async o => ({ name: o.suggestedName, requestPermission: async () => "granted",
+  createWritable: async () => { let buf = ""; return { write: async t => { buf += t; }, close: async () => { window.__files[o.suggestedName] = buf; } }; },
+  getFile: async () => new File([window.__files[o.suggestedName] || ""], o.suggestedName) });"""
+
+
 @pytest.fixture(scope="module")
 def page(tmp_path_factory):
     sync = pytest.importorskip("playwright.sync_api")
@@ -119,6 +125,7 @@ def page(tmp_path_factory):
         pg.errors = []
         pg.on("pageerror", lambda e: pg.errors.append(str(e)))
         pg.on("dialog", lambda dlg: dlg.accept())
+        pg.add_init_script(FAKE_FILES)                                               # "Save to file" without a real disk
         pg.goto("file://" + os.path.join(ROOT, "label_tool.html"))
         pg.set_input_files("#csv", str(csv))
         pg.wait_for_function("(() => { try { return window.__labeller.bars(1).t.length > 0; } catch (e) { return false; } })()")
@@ -167,68 +174,74 @@ def test_changing_timeframe_stays_on_the_same_moment(page):
     assert abs(page.evaluate("window.__labeller.centerTime()") - ms(T)) <= 60 * 60_000
     page.keyboard.press("PageUp")                                                    # back up the ladder
     assert page.evaluate("window.__labeller.tf") == 60
-    page.keyboard.press("Escape")
     i = center(page)
     t_i = bars(page, 60)["t"][i]
-    page.mouse.dblclick(*xy(page, i, bars(page, 60)["c"][i]))                       # zoom into that H1 candle
+    page.mouse.dblclick(*xy(page, i, bars(page, 60)["c"][i]))                       # an empty spot: zoom into that H1 candle
     assert page.evaluate("window.__labeller.tf") == 15
     assert t_i <= page.evaluate("window.__labeller.centerTime()") < t_i + 3_600_000
     assert not page.errors
 
 
-def test_every_tool_saves_what_you_mark_in_its_setup_and_step(page, tmp_path):
+def after_break(b, i, level, side, close=False):
+    """The first later candle beyond a level, as the page finds it."""
+    x = np.asarray(b["c"] if close else (b["h"] if side == "high" else b["l"]))[i + 1:]
+    hit = np.flatnonzero(x > level if side == "high" else x < level)
+    return i + 1 + hit[0] if len(hit) else None
+
+
+def test_every_tool_with_one_key_and_a_click_or_two(page, tmp_path):
     L = "window.__labeller"
-    page.click("#newlong")
-    sid = page.evaluate(f"{L}.setups.at(-1).id")
-    assert page.evaluate(f"{L}.tf") == 240
-
-    def step(key, per=60):
-        page.click(f"#steps button[data-step='{key}']")
-        page.evaluate(f"{L}.setPer({per})")
-
-    # H1 POI: click an order block candle
+    stamp = lambda b, i: str(pd.Timestamp(b["t"][i], unit="ms"))                    # noqa: E731
+    page.keyboard.press("n")                                                         # a new setup: marks join it
+    sid = page.evaluate(f"{L}.active")
+    assert sid == page.evaluate(f"{L}.setups.at(-1).id")
+    # H1 POI: O, click the candle; back on the cursor straight after
     view(page, 60, DF.index[12_000])
-    step("h1_poi")
     b, i = bars(page, 60), center(page)
+    page.keyboard.press("o")
     page.mouse.click(*xy(page, i, (b["h"][i] + b["l"][i]) / 2))
     m = last(page)
-    assert (m["kind"], m["tf"], m["dir"], m["setup"], m["step"]) == ("ob", "H1", "bull", sid, "h1_poi")
+    assert (m["kind"], m["tf"], m["setup"], m["step"]) == ("ob", "H1", sid, "h1_poi")
     assert (m["top"], m["bottom"], m["level"]) == (b["h"][i], b["l"][i], b["o"][i])
-    # reaction at it
-    step("h1_reaction")
-    b, i = bars(page, 60), center(page)
+    assert m["dir"] == ("bull" if b["c"][i] < b["o"][i] else "bear") and page.evaluate(f"{L}.tool") == "select"
+    page.keyboard.press("r")
     page.mouse.click(*xy(page, i + 1, b["l"][i + 1]))
     m = last(page)
     assert (m["kind"], m["dir"], m["level"], m["step"]) == ("reaction", "bull", b["l"][i + 1], "h1_reaction")
-    # M15 structure: the swing high, then the candle that broke it
-    step("m15_structure")
-    assert page.evaluate(f"{L}.tf") == 15
-    b, j = bars(page, 15), center(page)
+    # M15 structure: B, click the swing high; the candle that closed through it is found
+    view(page, 15, DF.index[12_100])
+    b, j0 = bars(page, 15), center(page)
+    j = next(k for k in range(j0 - 20, j0 + 20) if (e := after_break(b, k, b["h"][k], "high", close=True)) is not None and e < j0 + 25)
+    page.keyboard.press("b")
     page.mouse.click(*xy(page, j, b["h"][j]))
-    page.mouse.click(*xy(page, j + 3, b["c"][j + 3]))
     m = last(page)
-    assert (m["kind"], m["subtype"], m["dir"], m["level"]) == ("structure", "BOS", "bull", b["h"][j])
-    assert m["start"] == str(pd.Timestamp(b["t"][j], unit="ms")) and m["end"] == str(pd.Timestamp(b["t"][j + 3], unit="ms"))
-    # M1 range: drag over 9 candles; the magnet fits the box to their wicks
-    step("m1_range")
-    assert page.evaluate(f"{L}.tf") == 1
+    assert (m["kind"], m["subtype"], m["dir"], m["level"], m["step"]) == ("structure", "BOS", "bull", b["h"][j], "m15_structure")
+    assert m["end"] == stamp(b, after_break(b, j, b["h"][j], "high", close=True))
+    # M1: a pause range, then a staircase (the next range)
+    view(page, 1, DF.index[12_400])
     b, c = bars(page, 1), center(page)
-    x0, y0 = xy(page, c - 10, b["h"][c - 10])
-    x1, y1 = xy(page, c - 2, b["l"][c - 2])
-    page.mouse.move(x0, y0); page.mouse.down(); page.mouse.move(x1, y1, steps=6); page.mouse.up()
+    page.keyboard.press("1")
+    page.mouse.move(*xy(page, c - 10, b["h"][c - 10])); page.mouse.down()
+    page.mouse.move(*xy(page, c - 2, b["l"][c - 2]), steps=6); page.mouse.up()
     m = last(page)
-    assert (m["kind"], m["subtype"], m["dir"], m["step"]) == ("range", "pause", "up", "m1_range")
-    assert m["top"] == max(b["h"][c - 10:c - 1]) and m["bottom"] == min(b["l"][c - 10:c - 1])
-    assert m["start"] == str(pd.Timestamp(b["t"][c - 10], unit="ms"))
-    assert m["end"] == str(pd.Timestamp(b["t"][c - 2], unit="ms") + M1)
-    # the sweep: a low, then the candle that took it
-    step("sweep")
-    page.mouse.click(*xy(page, c - 1, b["l"][c - 1]))
-    page.mouse.click(*xy(page, c + 3, b["l"][c + 3]))
+    s_, e_ = c - 10, c - 2
+    top, bottom = max(b["h"][s_:e_ + 1]), min(b["l"][s_:e_ + 1])
+    assert (m["kind"], m["subtype"], m["step"], m["top"], m["bottom"]) == ("range", "pause", "m1_range", top, bottom)
+    assert m["dir"] == ("up" if (top + bottom) / 2 >= b["c"][s_ - (e_ - s_ + 1)] else "down")
+    assert m["start"] == stamp(b, s_) and m["end"] == str(pd.Timestamp(b["t"][e_], unit="ms") + M1)
+    page.keyboard.press("2")
+    page.mouse.move(*xy(page, c + 2, b["h"][c + 2])); page.mouse.down()
+    page.mouse.move(*xy(page, c + 9, b["l"][c + 9]), steps=6); page.mouse.up()
     m = last(page)
-    assert (m["kind"], m["dir"], m["level"], m["end"]) == ("sweep", "low", b["l"][c - 1], str(pd.Timestamp(b["t"][c + 3], unit="ms")))
-    # the M1 order block, then a buy limit at its open (the magnet snaps to it)
-    step("m1_ob")
+    assert (m["subtype"], m["step"], m["dir"]) == ("staircase", "m1_range_2", "up" if b["c"][c + 9] >= b["o"][c + 2] else "down")
+    # the sweep: S, click the low; the candle that took it is found
+    q = next(k for k in range(c - 25, c + 25) if (e := after_break(b, k, b["l"][k], "low")) is not None and e < c + 28)
+    page.keyboard.press("s")
+    page.mouse.click(*xy(page, q, b["l"][q]))
+    m = last(page)
+    assert (m["kind"], m["dir"], m["level"], m["step"]) == ("sweep", "low", b["l"][q], "sweep")
+    assert m["end"] == stamp(b, after_break(b, q, b["l"][q], "low"))
+    # the M1 order block, then T: entry at its open (the magnet snaps to it), stop: the take-profit goes at 12R
     g = page.evaluate(f"(() => {{ const g = {L}.geo; return {{T: g.T, H: g.H, BOT: g.BOT, lo: g.lo, hi: g.hi}}; }})()")
     lo, hi = g["lo"], g["hi"]
     ypx = lambda p: g["T"] + (hi - p) / (hi - lo) * (g["H"] - g["T"] - g["BOT"])    # noqa: E731  (the page's own scale)
@@ -238,66 +251,113 @@ def test_every_tool_saves_what_you_mark_in_its_setup_and_step(page, tmp_path):
     def far(p, prices):                                                          # nothing else within 12 pixels
         return min([abs(ypx(v) - ypx(p)) for v in prices] + [abs(v - ypx(p)) for v in taken] + [99]) > 12
 
-    oi, fill = next((i, k) for i in range(c + 4, c + 15) for k in range(i + 1, c + 29)
+    oi, fill = next((i, k) for i in range(c - 20, c + 10) for k in range(i + 1, c + 28)
                     if far(b["o"][i], [b["h"][i], b["l"][i]]) and b["l"][k] < b["o"][i] < b["h"][k]
                     and far(b["o"][i], [b["o"][k], b["h"][k], b["l"][k], b["c"][k]]))
+    page.keyboard.press("o")
     page.mouse.click(*xy(page, oi, (b["h"][oi] + b["l"][oi]) / 2))
     ob = last(page)
     assert ob["level"] == b["o"][oi] and ob["step"] == "m1_ob"
-    step("trade")
-    level = ob["level"]
-    x, y = xy(page, fill, level)
+    page.keyboard.press("t")
+    x, y = xy(page, fill, ob["level"])
     page.mouse.click(x, y - 3)                                                       # 3 pixels off: it snaps
-    page.mouse.click(*xy(page, fill, lo + (hi - lo) * 0.08))
-    page.mouse.click(*xy(page, fill, hi - (hi - lo) * 0.08))
+    page.mouse.click(*xy(page, fill, lo + (hi - lo) * 0.06))
     tr = last(page)
-    assert (tr["kind"], tr["order"], tr["dir"], tr["step"]) == ("trade", "limit", "long", "trade")
-    assert tr["entry"] == level and tr["stop"] < level < tr["target"]
-    # ½ momentum: the break's close, the stop: the limit is halfway between them
-    page.select_option("#otype", "half")
+    assert (tr["kind"], tr["order"], tr["dir"], tr["step"], tr["entry"]) == ("trade", "limit", "long", "trade", ob["level"])
+    assert np.isclose(tr["target"], tr["entry"] + 12 * (tr["entry"] - tr["stop"]))
+    assert page.evaluate(f"{L}.setups.at(-1).dir") == "long"                         # the setup took the trade's side
+    assert page.evaluate(f"{L}.marks.filter(m => m.setup === {sid} && m.kind === 'ob').map(m => m.dir)") == ["bull"] * 2   # and its zones
+    # ½ momentum: H, the break's close, the stop: the limit halfway, 10R
     k = c + 8
+    page.keyboard.press("h")
     page.mouse.click(*xy(page, k, b["c"][k]))
-    page.mouse.click(*xy(page, k, lo + (hi - lo) * 0.1))
-    page.mouse.click(*xy(page, k, hi - (hi - lo) * 0.1))
-    h = last(page)
-    assert h["order"] == "half" and h["level"] == b["c"][k] and np.isclose(h["entry"], (h["level"] + h["stop"]) / 2)
-    # market, short this time
-    page.select_option("#otype", "market")
+    page.mouse.click(*xy(page, k, lo + (hi - lo) * 0.08))
+    hm = last(page)
+    assert hm["order"] == "half" and hm["level"] == b["c"][k] and np.isclose(hm["entry"], (hm["level"] + hm["stop"]) / 2)
+    assert np.isclose(hm["target"], hm["entry"] + 10 * (hm["entry"] - hm["stop"]))
+    # market, short: T, pick market above the chart, the candle, the stop above
+    page.keyboard.press("t")
+    page.click("#opts [data-opt='order'][data-val='market']")
     page.mouse.click(*xy(page, k + 2, b["c"][k + 2]))
-    page.mouse.click(*xy(page, k + 2, hi - (hi - lo) * 0.12))
-    page.mouse.click(*xy(page, k + 2, lo + (hi - lo) * 0.12))
+    page.mouse.click(*xy(page, k + 2, hi - (hi - lo) * 0.04))
     mk = last(page)
     assert (mk["order"], mk["dir"], mk["entry"]) == ("market", "short", b["c"][k + 2])
-    # FVG: the middle candle of a gap
+    assert np.isclose(mk["target"], mk["entry"] - 12 * (mk["stop"] - mk["entry"]))
+    page.keyboard.press("t")
+    page.click("#opts [data-opt='order'][data-val='limit']")
     page.keyboard.press("Escape")
-    g = next(i for i in range(200, len(b["t"]) - 200) if b["l"][i + 1] > b["h"][i - 1] + 0.3 * (b["h"][i] - b["l"][i]))
-    view(page, 1, pd.Timestamp(b["t"][g], unit="ms"))
-    page.keyboard.press("3")
-    page.mouse.click(*xy(page, g, (b["h"][g] + b["l"][g]) / 2))
+    # FVG: F, click the middle candle of a gap
+    gi = next(i for i in range(200, len(b["t"]) - 200) if b["l"][i + 1] > b["h"][i - 1] + 0.3 * (b["h"][i] - b["l"][i]))
+    view(page, 1, pd.Timestamp(b["t"][gi], unit="ms"))
+    page.keyboard.press("f")
+    page.mouse.click(*xy(page, gi, (b["h"][gi] + b["l"][gi]) / 2))
     f = last(page)
-    assert (f["kind"], f["dir"], f["top"], f["bottom"]) == ("fvg", "bull", b["l"][g + 1], b["h"][g - 1])
-    # liquidity: a swing high; the line ends where price takes it
-    page.keyboard.press("4")
-    q = center(page)
-    page.mouse.click(*xy(page, q, b["h"][q]))
+    assert (f["kind"], f["dir"], f["top"], f["bottom"]) == ("fvg", "bull", b["l"][gi + 1], b["h"][gi - 1])
+    # liquidity: L, a swing high; the line ends where price takes it
+    page.keyboard.press("l")
+    qq = center(page) + 3
+    page.mouse.click(*xy(page, qq, b["h"][qq]))
     lq = last(page)
-    after = DF.iloc[DF.index.get_loc(pd.Timestamp(b["t"][q], unit="ms")) + 1:]
-    taken = after.index[(after["high"] > b["h"][q]).to_numpy()]
-    assert lq["level"] == b["h"][q] and lq["dir"] == "high" and lq["end"] == (str(taken[0]) if len(taken) else "")
+    after = DF.iloc[DF.index.get_loc(pd.Timestamp(b["t"][qq], unit="ms")) + 1:]
+    gone = after.index[(after["high"] > b["h"][qq]).to_numpy()]
+    assert lq["level"] == b["h"][qq] and lq["dir"] == "high" and lq["end"] == (str(gone[0]) if len(gone) else "")
     # the file: no problems, the page's results = labels.py's, and it reads back the same
     text = page.evaluate(f"{L}.toCSV()")
     path = tmp_path / "labels.csv"
     path.write_text(text)
     z = labels.load(path)
     assert labels.problems(z) == []
-    assert set(z.loc[z["setup"] == sid, "step"]) == {"h1_poi", "h1_reaction", "m15_structure", "m1_range", "sweep", "m1_ob", "trade"}
+    assert set(z.loc[z["setup"] == sid, "step"]) == {"h1_poi", "h1_reaction", "m15_structure", "m1_range", "m1_range_2",
+                                                     "sweep", "m1_ob", "trade", "m1_fvg", ""}       # M1 liquidity: no step
     res = labels.results(z, DF).set_index("id")
     mine = z[z["kind"] == "trade"].set_index("id")
     assert len(mine) == 3
     assert (res["outcome"] == mine["outcome"]).all() and np.allclose(res["R"], mine["R"], atol=1e-3)
     page.evaluate(f"{L}.fromCSV({text!r})")
     assert page.evaluate(f"{L}.toCSV()") == text
+    # with the setup closed, the M1 trade and range are still drawn on every higher timeframe
+    page.click("#enddone")
+    assert page.evaluate(f"{L}.active") is None
+    rng_id = int(z.loc[(z["kind"] == "range") & (z["setup"] == sid), "id"].iloc[0])
+    for tf in (5, 15, 60, 240):
+        view(page, tf, pd.Timestamp(tr["start"]), per=80)
+        assert {tr["id"], rng_id} <= set(page.evaluate(f"{L}.drawn()"))
     assert not page.errors
+
+
+def test_double_click_or_right_click_deletes_and_ctrl_z_brings_it_back(page):
+    L = "window.__labeller"
+    b = bars(page, 1)
+    n = page.evaluate(f"{L}.marks.length")
+    fv = page.evaluate(f"{L}.marks.find(m => m.kind === 'fvg')")
+    view(page, 1, pd.Timestamp(fv["start"]))
+    i = int(np.searchsorted(b["t"], ms(fv["start"])))
+    page.wait_for_timeout(750)
+    page.mouse.dblclick(*xy(page, i + 1, (fv["top"] + fv["bottom"]) / 2))           # double-click the FVG
+    assert page.evaluate(f"{L}.marks.length") == n - 1
+    assert not page.evaluate(f"{L}.marks.some(m => m.id === {fv['id']})")
+    page.keyboard.press("Control+z")
+    assert page.evaluate(f"{L}.marks.length") == n and page.evaluate(f"{L}.marks.some(m => m.id === {fv['id']})")
+    page.mouse.click(*xy(page, i + 1, (fv["top"] + fv["bottom"]) / 2), button="right")   # right-click it
+    assert page.evaluate(f"{L}.marks.length") == n - 1
+    page.keyboard.press("Control+z")
+    assert page.evaluate(f"{L}.marks.length") == n
+    page.mouse.click(*xy(page, i + 1, (fv["top"] + fv["bottom"]) / 2))              # select it, then Delete
+    page.keyboard.press("Delete")
+    assert page.evaluate(f"{L}.marks.length") == n - 1
+    page.keyboard.press("Control+z")
+    assert page.evaluate(f"{L}.marks.length") == n
+    assert not page.errors
+
+
+def test_save_to_file_keeps_every_change_in_the_file(page):
+    L = "window.__labeller"
+    page.click("#savefile")
+    page.wait_for_function("window.__files['labels_TEST_M1.csv'] !== undefined")
+    page.keyboard.press("n")                                                         # a change after connecting
+    page.wait_for_function(f"window.__files['labels_TEST_M1.csv'] === {L}.toCSV()")
+    assert "Saving to labels_TEST_M1.csv" in page.inner_text("#savefile")
+    assert "saved" in page.inner_text("#saved")
 
 
 def test_the_page_and_labels_py_agree_on_how_trades_play_out(page):
@@ -325,26 +385,11 @@ def test_the_page_and_labels_py_agree_on_how_trades_play_out(page):
     assert {"target", "stop", "not filled"} <= set(want["outcome"])
 
 
-def test_marks_show_on_their_own_and_higher_timeframes_or_with_their_setup(page):
-    L = "window.__labeller"
-    page.select_option("#setup", "")                                                 # no setup active
-    page.evaluate(f"{L}.setTF(1440)")
-    assert page.evaluate(f"{L}.visible().length") == 0                               # nothing was marked on D1
-    page.evaluate(f"{L}.setTF(60)")
-    assert {m["tf"] for m in page.evaluate(f"{L}.visible().map(m => ({{tf: m.tf}}))")} == {"H1"}
-    sid = page.evaluate(f"{L}.setups.at(-1).id")
-    page.select_option("#setup", str(sid))                                          # the setup's marks: all of them
-    assert page.evaluate(f"{L}.visible().length") == page.evaluate(f"{L}.marks.filter(m => m.setup === {sid}).length")
-    page.select_option("#setup", "")
-    page.keyboard.press("a")                                                         # every timeframe's marks
-    assert page.evaluate(f"{L}.visible().length") == page.evaluate(f"{L}.marks.length")
-    page.keyboard.press("a")
-
-
 def test_your_work_is_still_there_after_a_reload(page):
     n = page.evaluate("window.__labeller.marks.length")
+    page.evaluate("window.__labeller.saveNow()")
     page.reload()
     page.set_input_files("#csv", page.csv)
     page.wait_for_function("(() => { try { return window.__labeller.bars(1).t.length > 0; } catch (e) { return false; } })()")
-    assert n > 0 and page.evaluate("window.__labeller.marks.length") == n
-    assert not page.errors
+    page.wait_for_function(f"window.__labeller.marks.length === {n}")
+    assert n > 0 and not page.errors
